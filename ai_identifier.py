@@ -18,7 +18,7 @@ PLUGIN_LICENSE_URL = "https://opensource.org/licenses/MIT"
 musicbrainzngs.set_useragent("ai_music_identifier_plugin", "0.5", "dein.email@beispiel.com")
 
 # Hardcoded AcoustID API key (replace with your own)
-ACOUSTID_API_KEY = "v8oZDQFERK"
+ACOUSTID_API_KEY = "YOUR_API_KEY"
 
 def process_file(tagger, metadata, track, path):
     log.debug("AI Music Identifier: Entering process_file for %s", path)
