@@ -1,59 +1,88 @@
+PLUGIN_NAME = "AI Music Identifier"
+PLUGIN_AUTHOR = "Dein Name"
+PLUGIN_DESCRIPTION = "Identifiziert Musikdateien per AcoustID und ergänzt Metadaten (inkl. Genre, ISRC, Label, Tracknummer)."
+PLUGIN_VERSION = "0.9.1"
+PLUGIN_API_VERSIONS = ["3.0"]
+
 from picard import config, log
 from picard.metadata import Metadata
 import musicbrainzngs
 import pyacoustid
-from picard.ui.options import OptionsPage
 from PyQt5 import QtWidgets
 import hashlib
 
-PLUGIN_NAME = "AI Music Identifier"
-PLUGIN_AUTHOR = "Du"
-PLUGIN_DESCRIPTION = """
-Identifiziert Musik mit AcoustID und aktualisiert die Track-Metadaten (Titel, Künstler, Album, Veröffentlichungsdatum).
-Der AcoustID API-Key kann in den Plugin-Einstellungen gesetzt werden.
-"""
-PLUGIN_VERSION = "0.9"
-PLUGIN_API_VERSIONS = ["2.0", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8", "3.0"]
-PLUGIN_LICENSE = "MIT"
-PLUGIN_LICENSE_URL = "https://opensource.org/licenses/MIT"
-
-musicbrainzngs.set_useragent("ai_music_identifier_plugin", "0.9", "dein.email@beispiel.com")
-
-# Caching für identifizierte Dateien (Hash: Metadaten)
 _aiid_cache = {}
 
+def _msg(de, en):
+    # Einfache Sprachumschaltung
+    import locale
+    lang = locale.getdefaultlocale()[0]
+    return de if lang and lang.startswith("de") else en
+
 def _get_api_key():
+    # Hole den AcoustID API-Key aus den Picard-Einstellungen
     return config.setting.get("aiid_acoustid_api_key", "")
 
-def _get_lang():
-    return config.setting.get("user_interface_language", "en")[:2]
+def select_result_dialog(results, parent=None):
+    dialog = QtWidgets.QDialog(parent)
+    dialog.setWindowTitle(_msg("AcoustID-Treffer auswählen", "Select AcoustID Match"))
+    layout = QtWidgets.QVBoxLayout(dialog)
+    label = QtWidgets.QLabel(_msg("Mehrere Treffer gefunden. Bitte wählen:", "Multiple matches found. Please select:"))
+    layout.addWidget(label)
+    list_widget = QtWidgets.QListWidget()
+    for result in results:
+        title = result.get("title", "–")
+        artists = ", ".join([a.get("name", "") for a in result.get("artists", [])]) if "artists" in result else ""
+        album = result.get("releasegroups", [{}])[0].get("title", "") if "releasegroups" in result and result["releasegroups"] else ""
+        item_text = f"{title} – {artists} [{album}]"
+        list_widget.addItem(item_text)
+    layout.addWidget(list_widget)
+    button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+    layout.addWidget(button_box)
+    button_box.accepted.connect(dialog.accept)
+    button_box.rejected.connect(dialog.reject)
+    dialog.setLayout(layout)
+    if dialog.exec_() == QtWidgets.QDialog.Accepted and list_widget.currentRow() >= 0:
+        return list_widget.currentRow()
+    return None
 
-def _msg(msg_de, msg_en):
-    return msg_de if _get_lang() == "de" else msg_en
+def fetch_additional_metadata(result, metadata):
+    # Genre
+    if "tags" in result and not metadata.get("genre"):
+        tags = result["tags"]
+        if isinstance(tags, list) and tags:
+            metadata["genre"] = tags[0]
+        elif isinstance(tags, dict) and "name" in tags:
+            metadata["genre"] = tags["name"]
+    # ISRC
+    if "recordings" in result and result["recordings"]:
+        rec = result["recordings"][0]
+        if "isrcs" in rec and rec["isrcs"]:
+            metadata["isrc"] = rec["isrcs"][0]
+    # Label, Tracknummer
+    if "recordings" in result and result["recordings"]:
+        mbid = result["recordings"][0].get("id")
+        if mbid:
+            try:
+                release = musicbrainzngs.get_recording_by_id(mbid, includes=["releases", "isrcs", "artist-credits", "tags"])
+                release_list = release["recording"].get("release-list", [])
+                if release_list:
+                    rel = release_list[0]
+                    # Label
+                    if "label-info-list" in rel and rel["label-info-list"]:
+                        label = rel["label-info-list"][0].get("label", {}).get("name")
+                        if label and not metadata.get("label"):
+                            metadata["label"] = label
+                    # Tracknummer
+                    if "medium-list" in rel and rel["medium-list"]:
+                        tracks = rel["medium-list"][0].get("track-list", [])
+                        if tracks and not metadata.get("tracknumber"):
+                            metadata["tracknumber"] = tracks[0].get("number")
+            except musicbrainzngs.MusicBrainzError as e:
+                log.warning("AI Music Identifier: Failed to fetch extended MusicBrainz data for MBID %s: %s", mbid, e)
 
-class AIIDOptionsPage(OptionsPage):
-    NAME = "aiid"
-    TITLE = "AI Music Identifier"
-    PARENT = "plugins"
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.api_key_edit = QtWidgets.QLineEdit()
-        self.api_key_edit.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.api_key_edit.setText(config.setting.get("aiid_acoustid_api_key", ""))
-        layout = QtWidgets.QFormLayout()
-        layout.addRow("AcoustID API Key:", self.api_key_edit)
-        self.setLayout(layout)
-
-    def load(self):
-        self.api_key_edit.setText(config.setting.get("aiid_acoustid_api_key", ""))
-
-    def save(self):
-        config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
-
-#register_options_page(AIIDOptionsPage)
-
-def process_file(tagger, metadata, file):
+def file_post_load_processor(tagger, metadata, file):
+    print("AIID: process_file called for", getattr(file, "filename", file))
     log.debug("AI Music Identifier: Entering process_file for %s", file.filename)
     if not file.filename:
         log.error("AI Music Identifier: No file path provided")
@@ -88,31 +117,28 @@ def process_file(tagger, metadata, file):
         results = pyacoustid.lookup(api_key, fp, duration)
 
         if results and 'results' in results and len(results['results']) > 0:
-            result = results['results'][0]
-            log.debug("AI Music Identifier: Found AcoustID match: %s", result)
+            acoustid_results = results['results']
+            # Wenn mehr als ein Treffer, Auswahl anzeigen
+            if len(acoustid_results) > 1:
+                idx = select_result_dialog(acoustid_results, tagger.window)
+                if idx is None:
+                    msg = _msg("Keine Auswahl getroffen für %s", "No selection made for %s") % file.filename
+                    tagger.window.set_statusbar_message(msg)
+                    return
+                result = acoustid_results[idx]
+            else:
+                result = acoustid_results[0]
+            log.debug("AI Music Identifier: Selected AcoustID match: %s", result)
 
-            # Update metadata (nur wenn leer)
-            if not metadata["title"]:
-                metadata["title"] = result.get("title", metadata["title"])
-            if not metadata["artist"]:
-                artists = result.get("artists", [{}])
-                metadata["artist"] = artists[0].get("name", metadata["artist"]) if artists else metadata["artist"]
-            if not metadata["album"]:
-                release_groups = result.get("releasegroups", [{}])
-                metadata["album"] = release_groups[0].get("title", metadata["album"]) if release_groups else metadata["album"]
+            # Metadaten immer aktualisieren (auch wenn schon vorhanden)
+            metadata["title"] = result.get("title", metadata.get("title", ""))
+            artists = result.get("artists", [{}])
+            metadata["artist"] = artists[0].get("name", metadata.get("artist", "")) if artists else metadata.get("artist", "")
+            release_groups = result.get("releasegroups", [{}])
+            metadata["album"] = release_groups[0].get("title", metadata.get("album", "")) if release_groups else metadata.get("album", "")
 
-            # Fetch additional metadata from MusicBrainz if available
-            if "recordings" in result and result["recordings"]:
-                mbid = result["recordings"][0].get("id")
-                if mbid:
-                    try:
-                        release = musicbrainzngs.get_recording_by_id(mbid, includes=["releases"])
-                        release_list = release["recording"].get("release-list", [])
-                        if release_list and not metadata["date"]:
-                            metadata["date"] = release_list[0].get("date", metadata["date"])
-                        log.debug("AI Music Identifier: Fetched MusicBrainz metadata: %s", metadata)
-                    except musicbrainzngs.MusicBrainzError as e:
-                        log.warning("AI Music Identifier: Failed to fetch MusicBrainz data for MBID %s: %s", mbid, e)
+            # Zusätzliche Felder ergänzen
+            fetch_additional_metadata(result, metadata)
 
             # Cache speichern
             if file_hash:
@@ -143,8 +169,3 @@ def process_file(tagger, metadata, file):
         msg = _msg("Fehler bei der Verarbeitung von %s", "Error processing %s") % file.filename
         log.error("AI Music Identifier: Unexpected error for %s: %s", file.filename, e)
         tagger.window.set_statusbar_message(msg)
-
-from picard.extension_points import ExtensionPoint
-log.debug("AI Music Identifier: Registering file_post_addition_processor")
-ExtensionPoint("file_post_addition_processor").register(__name__, process_file)
-log.debug("AI Music Identifier: Registering file_post_save_processor")
