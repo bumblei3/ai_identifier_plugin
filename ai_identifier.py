@@ -17,6 +17,8 @@ import os
 import json
 from picard.ui.options import OptionsPage
 import requests
+from picard.file import File
+from picard.extension_points.event_hooks import register_file_post_load_processor
 
 _aiid_cache = {}
 
@@ -46,7 +48,7 @@ _load_cache()
 _DEF_AUTO_SELECT = False
 
 def _get_auto_select():
-    return config.setting.get("aiid_auto_select_first", _DEF_AUTO_SELECT)
+    return config.setting["aiid_auto_select_first"] if "aiid_auto_select_first" in config.setting else _DEF_AUTO_SELECT
 
 def _msg(de, en):
     # Einfache Sprachumschaltung
@@ -55,18 +57,27 @@ def _msg(de, en):
     return de if lang and lang.startswith("de") else en
 
 def _get_api_key():
-    # Hole den AcoustID API-Key aus den Picard-Einstellungen
-    return config.setting.get("aiid_acoustid_api_key", "")
+    # Hole zuerst den Plugin-Key, dann den globalen Key
+    if "aiid_acoustid_api_key" in config.setting and config.setting["aiid_acoustid_api_key"]:
+        return config.setting["aiid_acoustid_api_key"]
+    elif "acoustid_apikey" in config.setting and config.setting["acoustid_apikey"]:
+        return config.setting["acoustid_apikey"]
+    return ""
 
 def call_ollama(prompt, model="mistral"):
-    url = config.setting.get("aiid_ollama_url", "http://localhost:11434") + "/api/generate"
+    url = str(config.setting["aiid_ollama_url"]) if "aiid_ollama_url" in config.setting else "http://localhost:11434"
+    url += "/api/generate"
     data = {"model": model, "prompt": prompt, "stream": False}
-    timeout = config.setting.get("aiid_ollama_timeout", 60)
+    timeout = int(config.setting["aiid_ollama_timeout"] or 60) if "aiid_ollama_timeout" in config.setting else 60
+    log.info(f"AI Music Identifier: Sende Prompt an Ollama (Modell: {model}, URL: {url}, Timeout: {timeout}): {prompt}")
     try:
         response = requests.post(url, json=data, timeout=timeout)
         response.raise_for_status()
-        return response.json()["response"].strip()
+        result = response.json()["response"].strip()
+        log.info(f"AI Music Identifier: Ollama-Antwort erhalten: {result}")
+        return result
     except Exception as e:
+        log.error(f"AI Music Identifier: Fehler bei Ollama-Anfrage: {e}")
         return f"Fehler bei Ollama-Anfrage: {e}"
 
 def get_genre_suggestion(title, artist):
@@ -74,15 +85,18 @@ def get_genre_suggestion(title, artist):
         f"Welches Musikgenre hat der Song '{title}' von '{artist}'? "
         "Antworte nur mit dem Genre, ohne weitere Erklärungen."
     )
-    model = config.setting.get("aiid_ollama_model", "mistral")
-    # KI-Cache-Schlüssel
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
     cache_key = f"ki_genre::{model}::{title}::{artist}"
     if cache_key in _aiid_cache:
+        log.debug(f"AI Music Identifier: Genre-Vorschlag aus KI-Cache für {title} - {artist}: {_aiid_cache[cache_key]}")
         return _aiid_cache[cache_key]
     genre = call_ollama(prompt, model)
     if genre and "Fehler" not in genre:
+        log.info(f"AI Music Identifier: Genre-Vorschlag von KI für {title} - {artist}: {genre}")
         _aiid_cache[cache_key] = genre
         _save_cache()
+    else:
+        log.warning(f"AI Music Identifier: Kein gültiger Genre-Vorschlag von KI für {title} - {artist}: {genre}")
     return genre
 
 def show_genre_suggestion_dialog(parent, genre):
@@ -98,14 +112,18 @@ def get_mood_suggestion(title, artist):
         f"Welche Stimmung hat der Song '{title}' von '{artist}'? "
         "Antworte nur mit einem Wort (z.B. fröhlich, melancholisch, energetisch)."
     )
-    model = config.setting.get("aiid_ollama_model", "mistral")
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
     cache_key = f"ki_mood::{model}::{title}::{artist}"
     if cache_key in _aiid_cache:
+        log.debug(f"AI Music Identifier: Stimmungsvorschlag aus KI-Cache für {title} - {artist}: {_aiid_cache[cache_key]}")
         return _aiid_cache[cache_key]
     mood = call_ollama(prompt, model)
     if mood and "Fehler" not in mood:
+        log.info(f"AI Music Identifier: Stimmungsvorschlag von KI für {title} - {artist}: {mood}")
         _aiid_cache[cache_key] = mood
         _save_cache()
+    else:
+        log.warning(f"AI Music Identifier: Kein gültiger Stimmungsvorschlag von KI für {title} - {artist}: {mood}")
     return mood
 
 class AIIDOptionsPage(OptionsPage):
@@ -162,13 +180,13 @@ class AIIDOptionsPage(OptionsPage):
         self.setLayout(layout)
 
     def load(self):
-        self.api_key_edit.setText(config.setting.get("aiid_acoustid_api_key", ""))
-        self.auto_select_checkbox.setChecked(config.setting.get("aiid_auto_select_first", False))
-        self.ki_genre_checkbox.setChecked(config.setting.get("aiid_enable_ki_genre", True))
-        self.model_combo.setCurrentText(config.setting.get("aiid_ollama_model", "mistral"))
-        self.url_edit.setText(config.setting.get("aiid_ollama_url", "http://localhost:11434"))
-        self.timeout_spin.setValue(config.setting.get("aiid_ollama_timeout", 60))
-        self.ki_mood_checkbox.setChecked(config.setting.get("aiid_enable_ki_mood", False))
+        self.api_key_edit.setText(str(config.setting["aiid_acoustid_api_key"]) if "aiid_acoustid_api_key" in config.setting else "")
+        self.auto_select_checkbox.setChecked(bool(config.setting["aiid_auto_select_first"]) if "aiid_auto_select_first" in config.setting else False)
+        self.ki_genre_checkbox.setChecked(bool(config.setting["aiid_enable_ki_genre"]) if "aiid_enable_ki_genre" in config.setting else True)
+        self.model_combo.setCurrentText(str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral")
+        self.url_edit.setText(str(config.setting["aiid_ollama_url"]) if "aiid_ollama_url" in config.setting else "http://localhost:11434")
+        self.timeout_spin.setValue(int(config.setting["aiid_ollama_timeout"] or 60) if "aiid_ollama_timeout" in config.setting else 60)
+        self.ki_mood_checkbox.setChecked(bool(config.setting["aiid_enable_ki_mood"]) if "aiid_enable_ki_mood" in config.setting else False)
 
     def save(self):
         config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
@@ -304,7 +322,9 @@ def fetch_additional_metadata(result, metadata):
             except musicbrainzngs.MusicBrainzError as e:
                 log.warning("AI Music Identifier: Failed to fetch extended MusicBrainz data for MBID %s: %s", mbid, e)
 
-def file_post_load_processor(tagger, metadata, file):
+def file_post_load_processor(file):
+    tagger = getattr(file, 'tagger', None)
+    metadata = getattr(file, 'metadata', None)
     print("AIID: process_file called for", getattr(file, "filename", file))
     log.debug("AI Music Identifier: Entering process_file for %s", file.filename)
     if not file.filename:
@@ -312,11 +332,13 @@ def file_post_load_processor(tagger, metadata, file):
         return
 
     api_key = _get_api_key()
+    log.info(f"AI Music Identifier: Gelesener API-Key: {api_key!r}")
     if not api_key:
         msg = _msg("Bitte AcoustID API-Key in den Plugin-Einstellungen setzen.",
                    "Please set AcoustID API key in the plugin settings.")
         log.error("AI Music Identifier: No valid AcoustID API key configured")
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
         return
 
     # Caching: Hash über Dateipfad + Größe
@@ -327,9 +349,11 @@ def file_post_load_processor(tagger, metadata, file):
 
     if file_hash and file_hash in _aiid_cache:
         cached = _aiid_cache[file_hash]
-        metadata.update(cached)
+        if metadata:
+            metadata.update(cached)
         msg = _msg("Metadaten aus Cache übernommen für %s", "Loaded metadata from cache for %s") % file.filename
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
         log.debug("AI Music Identifier: Used cached metadata for %s", file.filename)
         return
 
@@ -346,10 +370,11 @@ def file_post_load_processor(tagger, metadata, file):
                 if _get_auto_select():
                     idx = 0
                 else:
-                    idx = select_result_dialog(acoustid_results, tagger.window)
+                    idx = select_result_dialog(acoustid_results, tagger.window if tagger and hasattr(tagger, 'window') else None)
                 if idx is None:
                     msg = _msg("Keine Auswahl getroffen für %s", "No selection made for %s") % file.filename
-                    tagger.window.set_statusbar_message(msg)
+                    if tagger and hasattr(tagger, 'window'):
+                        tagger.window.set_statusbar_message(msg)
                     return
                 result = acoustid_results[idx]
             else:
@@ -357,72 +382,91 @@ def file_post_load_processor(tagger, metadata, file):
             log.debug("AI Music Identifier: Selected AcoustID match: %s", result)
 
             # Metadaten immer aktualisieren (auch wenn schon vorhanden)
-            metadata["title"] = result.get("title", metadata.get("title", ""))
-            artists = result.get("artists", [{}])
-            metadata["artist"] = artists[0].get("name", metadata.get("artist", "")) if artists else metadata.get("artist", "")
-            release_groups = result.get("releasegroups", [{}])
-            metadata["album"] = release_groups[0].get("title", metadata.get("album", "")) if release_groups else metadata.get("album", "")
+            if metadata is not None:
+                metadata["title"] = result.get("title", metadata.get("title", ""))
+                artists = result.get("artists", [{}])
+                metadata["artist"] = artists[0].get("name", metadata.get("artist", "")) if artists else metadata.get("artist", "")
+                release_groups = result.get("releasegroups", [{}])
+                metadata["album"] = release_groups[0].get("title", metadata.get("album", "")) if release_groups else metadata.get("album", "")
 
             # Zusätzliche Felder ergänzen
-            fetch_additional_metadata(result, metadata)
+            if metadata is not None:
+                fetch_additional_metadata(result, metadata)
+
+            # Debug: Logge den Wert von metadata['genre'] vor der KI-Prüfung
+            if metadata is not None:
+                log.info(f"AI Music Identifier: Wert von metadata['genre'] vor KI-Prüfung: {metadata.get('genre')!r}")
 
             # KI-Genre-Vorschlag per Ollama, falls kein Genre gefunden wurde und Option aktiviert ist
-            if config.setting.get("aiid_enable_ki_genre", True) and not metadata.get("genre"):
+            if metadata is not None and (bool(config.setting["aiid_enable_ki_genre"]) if "aiid_enable_ki_genre" in config.setting else True) and not metadata.get("genre"):
+                log.info(f"AI Music Identifier: Starte KI-Genre-Vorschlag für Datei: {file.filename}")
                 genre = get_genre_suggestion(metadata.get("title", ""), metadata.get("artist", ""))
                 if genre and "Fehler" not in genre:
                     # Vorschau-Dialog anzeigen
-                    if show_genre_suggestion_dialog(tagger.window, genre):
+                    if show_genre_suggestion_dialog(tagger.window if tagger and hasattr(tagger, 'window') else None, genre):
                         metadata["genre"] = genre
                         log.info("AI Music Identifier: Genre per Ollama übernommen: %s", genre)
                     else:
                         log.info("AI Music Identifier: KI-Genre-Vorschlag abgelehnt: %s", genre)
                 elif genre and "Fehler" in genre:
                     msg = _msg(f"KI-Genre-Vorschlag fehlgeschlagen: {genre}", f"AI genre suggestion failed: {genre}")
-                    tagger.window.set_statusbar_message(msg)
+                    if tagger and hasattr(tagger, 'window'):
+                        tagger.window.set_statusbar_message(msg)
                     log.warning("AI Music Identifier: %s", genre)
 
             # KI-Stimmungsvorschlag per Ollama, falls Option aktiviert
-            if config.setting.get("aiid_enable_ki_mood", False):
+            if metadata is not None and (bool(config.setting["aiid_enable_ki_mood"]) if "aiid_enable_ki_mood" in config.setting else False):
+                log.info(f"AI Music Identifier: Starte KI-Stimmungsvorschlag für Datei: {file.filename}")
                 mood = get_mood_suggestion(metadata.get("title", ""), metadata.get("artist", ""))
                 if mood and "Fehler" not in mood:
                     # Vorschau-Dialog für Stimmung
-                    if show_genre_suggestion_dialog(tagger.window, mood):
+                    if show_genre_suggestion_dialog(tagger.window if tagger and hasattr(tagger, 'window') else None, mood):
                         metadata["mood"] = mood
                         log.info("AI Music Identifier: Stimmung per Ollama übernommen: %s", mood)
                     else:
                         log.info("AI Music Identifier: KI-Stimmungsvorschlag abgelehnt: %s", mood)
                 elif mood and "Fehler" in mood:
                     msg = _msg(f"KI-Stimmungsvorschlag fehlgeschlagen: {mood}", f"AI mood suggestion failed: {mood}")
-                    tagger.window.set_statusbar_message(msg)
+                    if tagger and hasattr(tagger, 'window'):
+                        tagger.window.set_statusbar_message(msg)
                     log.warning("AI Music Identifier: %s", mood)
 
             # Cache speichern
-            if file_hash:
+            if file_hash and metadata is not None:
                 _aiid_cache[file_hash] = dict(metadata)
                 _save_cache()
 
             msg = _msg("Metadaten aktualisiert für %s", "Updated metadata for %s") % file.filename
-            tagger.window.set_statusbar_message(msg)
+            if tagger and hasattr(tagger, 'window'):
+                tagger.window.set_statusbar_message(msg)
             log.debug("AI Music Identifier: Updated metadata: %s", metadata)
         else:
             msg = _msg("Keine Übereinstimmung gefunden für %s", "No matches found for %s") % file.filename
             log.warning("AI Music Identifier: No AcoustID matches found for %s", file.filename)
-            tagger.window.set_statusbar_message(msg)
+            if tagger and hasattr(tagger, 'window'):
+                tagger.window.set_statusbar_message(msg)
 
     except pyacoustid.NoBackendError:
         msg = _msg("Chromaprint-Backend nicht gefunden. Bitte libchromaprint installieren.",
                    "Chromaprint backend not found. Please install libchromaprint.")
         log.error("AI Music Identifier: Chromaprint backend not found.")
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
     except pyacoustid.FingerprintGenerationError:
         msg = _msg("Fehler beim Fingerprinting von %s", "Failed to fingerprint %s") % file.filename
         log.error("AI Music Identifier: Failed to generate fingerprint for %s", file.filename)
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
     except pyacoustid.WebServiceError as e:
         msg = _msg("AcoustID API-Fehler für %s", "AcoustID API error for %s") % file.filename
         log.error("AI Music Identifier: AcoustID API error for %s: %s", file.filename, e)
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
     except Exception as e:
         msg = _msg("Fehler bei der Verarbeitung von %s", "Error processing %s") % file.filename
         log.error("AI Music Identifier: Unexpected error for %s: %s", file.filename, e)
-        tagger.window.set_statusbar_message(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
+
+register_file_post_load_processor(file_post_load_processor)
+OPTIONS_PAGE_CLASS = AIIDOptionsPage
