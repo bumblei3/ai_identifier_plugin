@@ -1,5 +1,5 @@
 PLUGIN_NAME = "AI Music Identifier"
-PLUGIN_AUTHOR = "Dein Name"
+PLUGIN_AUTHOR = "bumblei3"
 PLUGIN_DESCRIPTION = "Identifiziert Musikdateien per AcoustID und ergänzt Metadaten (inkl. Genre, ISRC, Label, Tracknummer)."
 PLUGIN_VERSION = "0.9.1"
 PLUGIN_API_VERSIONS = ["3.0"]
@@ -20,13 +20,24 @@ import requests
 from picard.file import File
 from picard.extension_points.event_hooks import register_file_post_load_processor
 import time
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThreadPool, QRunnable, QObject, pyqtSignal, QUrl
 from collections import deque
+import threading
+import glob
+from PyQt6.QtGui import QDropEvent, QDragEnterEvent
+from PyQt6.QtCore import QMimeData, QPointF
 
 # Globale Thread-Limitierung für KI-Worker
 _MAX_KI_THREADS = 2
 _active_ki_threads = 0
 _ki_worker_queue = deque()
+
+# Semaphore für parallele AcoustID-Lookups
+_ACOUSTID_MAX_PARALLEL = 2
+_acoustid_semaphore = threading.Semaphore(_ACOUSTID_MAX_PARALLEL)
+
+# Chunk-Größe für Batch-Import (wie viele Dateien pro Block an Picard übergeben werden)
+_CHUNK_SIZE = 20
 
 def _on_ki_worker_finished(worker):
     global _active_ki_threads
@@ -152,16 +163,14 @@ def call_ollama(prompt, model="mistral", tagger=None, file_name=None):
             tagger.window.set_statusbar_message(_msg(f"KI-Fehler: {e}", f"AI error: {e}"))
         return f"Fehler bei Ollama-Anfrage: {e}"
 
-class AIWorker(QThread):
-    result_ready = pyqtSignal(str, str)  # (Feldname, Wert)
-    error = pyqtSignal(str)
-
+class AIKIRunnable(QRunnable):
     def __init__(self, prompt, model, field, tagger=None):
         super().__init__()
         self.prompt = prompt
         self.model = model
         self.field = field  # "genre" oder "mood"
         self.tagger = tagger
+        self.signals = WorkerSignals()
 
     def run(self):
         try:
@@ -172,11 +181,11 @@ class AIWorker(QThread):
             else:
                 result = None
             if result and "Fehler" not in result:
-                self.result_ready.emit(self.field, result)
+                self.signals.result_ready.emit(self.field, result)
             else:
-                self.error.emit(result or "Unbekannter Fehler")
+                self.signals.error.emit(result or "Unbekannter Fehler", None)
         except Exception as e:
-            self.error.emit(str(e))
+            self.signals.error.emit(str(e), None)
 
 def get_genre_suggestion(title, artist, tagger=None, file_name=None):
     prompt = (
@@ -260,6 +269,44 @@ def get_mood_suggestion(title, artist, tagger=None, file_name=None):
             tagger.window.set_statusbar_message(_msg(f"KI-Stimmungs-Fehler: {mood}", f"AI mood error: {mood}"))
     return mood
 
+def get_language_suggestion(title, artist, tagger=None, file_name=None):
+    prompt = (
+        f"In welcher Sprache ist der Song '{title}' von '{artist}' gesungen? "
+        "Antworte nur mit der Sprache (z.B. Deutsch, Englisch, Spanisch), ohne weitere Erklärungen."
+    )
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_language::" + model + f"::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            return v["value"]
+    language = call_ollama(prompt, model, tagger, file_name)
+    if language and "Fehler" not in language:
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": language, "ts": time.time()}
+            _save_cache()
+    return language
+
+def get_instruments_suggestion(title, artist, tagger=None, file_name=None):
+    prompt = (
+        f"Welche Hauptinstrumente sind im Song '{title}' von '{artist}' zu hören? "
+        "Antworte nur mit einer kommagetrennten Liste (z.B. Gitarre, Schlagzeug, Bass), ohne weitere Erklärungen."
+    )
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_instruments::" + model + f"::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            return v["value"]
+    instruments = call_ollama(prompt, model, tagger, file_name)
+    if instruments and "Fehler" not in instruments:
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": instruments, "ts": time.time()}
+            _save_cache()
+    return instruments
+
 class AIIDOptionsPage(OptionsPage):
     NAME = "ai_identifier"
     TITLE = "AI Music Identifier"
@@ -272,62 +319,152 @@ class AIIDOptionsPage(OptionsPage):
 
         # API-Key
         self.api_key_edit = QtWidgets.QLineEdit()
+        self.api_key_edit.setToolTip(_msg(
+            "Dein persönlicher Schlüssel für die Abfrage von AcoustID. Kostenlos auf acoustid.org erhältlich.",
+            "Your personal key for querying AcoustID. Free at acoustid.org."
+        ))
         layout.addWidget(QtWidgets.QLabel("AcoustID API-Key:"))
         layout.addWidget(self.api_key_edit)
 
         # Automatische Auswahl
         self.auto_select_checkbox = QtWidgets.QCheckBox(_msg("Ersten Treffer automatisch wählen (Batch-Modus)", "Automatically select first match (batch mode)"))
+        self.auto_select_checkbox.setToolTip(_msg(
+            "Wählt bei mehreren Treffern automatisch den ersten aus. Praktisch für große Mengen (Batch-Verarbeitung).",
+            "Automatically selects the first match if multiple are found. Useful for batch processing."
+        ))
         layout.addWidget(self.auto_select_checkbox)
 
         # KI-Genre-Vorschlag aktivieren
         self.ki_genre_checkbox = QtWidgets.QCheckBox(_msg("KI-Genre-Vorschlag aktivieren", "Enable AI genre suggestion"))
+        self.ki_genre_checkbox.setToolTip(_msg(
+            "Lässt die KI automatisch ein Genre vorschlagen und eintragen.",
+            "Lets the AI automatically suggest and set a genre."
+        ))
         layout.addWidget(self.ki_genre_checkbox)
 
         # KI-Cache verwenden
         self.cache_enable_checkbox = QtWidgets.QCheckBox(_msg("KI-Cache verwenden (empfohlen)", "Use AI cache (recommended)"))
+        self.cache_enable_checkbox.setToolTip(_msg(
+            "Speichert KI-Vorschläge für schnellere Verarbeitung und weniger Anfragen.",
+            "Stores AI suggestions for faster processing and fewer requests."
+        ))
         layout.addWidget(self.cache_enable_checkbox)
 
         # Ollama-Modell für KI-Vorschläge
         self.model_label = QtWidgets.QLabel(_msg("Ollama-Modell für KI-Vorschläge:", "Ollama model for AI suggestions:"))
         self.model_combo = QtWidgets.QComboBox()
         self.model_combo.addItems(["mistral", "llama2", "phi", "gemma"])
+        self.model_combo.setToolTip(_msg(
+            "Welches KI-Modell für Genre/Stimmung verwendet wird. 'mistral' ist meist ein guter Standard.",
+            "Which AI model to use for genre/mood. 'mistral' is usually a good default."
+        ))
         layout.addWidget(self.model_label)
         layout.addWidget(self.model_combo)
 
         # Ollama-Server-URL
         self.url_label = QtWidgets.QLabel(_msg("Ollama-Server-URL:", "Ollama server URL:"))
         self.url_edit = QtWidgets.QLineEdit()
+        self.url_edit.setToolTip(_msg(
+            "Adresse deines lokalen Ollama-Servers (z.B. http://localhost:11434)",
+            "Address of your local Ollama server (e.g. http://localhost:11434)"
+        ))
         layout.addWidget(self.url_label)
         layout.addWidget(self.url_edit)
         # Timeout
         self.timeout_label = QtWidgets.QLabel(_msg("KI-Timeout (Sekunden):", "AI timeout (seconds):"))
         self.timeout_spin = QtWidgets.QSpinBox()
         self.timeout_spin.setRange(5, 300)
+        self.timeout_spin.setToolTip(_msg(
+            "Wie lange auf eine Antwort der KI gewartet wird, bevor abgebrochen wird.",
+            "How long to wait for an AI response before timing out."
+        ))
         layout.addWidget(self.timeout_label)
         layout.addWidget(self.timeout_spin)
         # KI-Stimmung aktivieren
         self.ki_mood_checkbox = QtWidgets.QCheckBox(_msg("KI-Stimmungsvorschlag aktivieren", "Enable AI mood suggestion"))
+        self.ki_mood_checkbox.setToolTip(_msg(
+            "Lässt die KI eine Stimmung (Mood) vorschlagen und eintragen.",
+            "Lets the AI suggest and set a mood."
+        ))
         layout.addWidget(self.ki_mood_checkbox)
 
         # Cache-Ablaufzeit
         self.cache_expiry_label = QtWidgets.QLabel(_msg("Cache-Ablaufzeit (Tage):", "Cache expiry (days):"))
         self.cache_expiry_spin = QtWidgets.QSpinBox()
         self.cache_expiry_spin.setRange(1, 365)
+        self.cache_expiry_spin.setToolTip(_msg(
+            "Wie viele Tage KI-Vorschläge im Cache gespeichert werden.",
+            "How many days AI suggestions are kept in the cache."
+        ))
         layout.addWidget(self.cache_expiry_label)
         layout.addWidget(self.cache_expiry_spin)
 
         # Cache leeren
         self.clear_cache_btn = QtWidgets.QPushButton(_msg("Cache leeren", "Clear cache"))
+        self.clear_cache_btn.setToolTip(_msg(
+            "Löscht alle gespeicherten KI-Vorschläge aus dem Cache.",
+            "Deletes all stored AI suggestions from the cache."
+        ))
         self.clear_cache_btn.clicked.connect(self.clear_cache)
         layout.addWidget(self.clear_cache_btn)
 
+        # Fortschritt zurücksetzen
+        self.reset_progress_btn = QtWidgets.QPushButton(_msg("Fortschritt zurücksetzen", "Reset progress"))
+        self.reset_progress_btn.setToolTip(_msg(
+            "Setzt alle Fortschrittszähler (Dateien verarbeitet, Fehler etc.) auf 0.",
+            "Resets all progress counters (files processed, errors etc.) to 0."
+        ))
+        self.reset_progress_btn.clicked.connect(self.reset_progress)
+        layout.addWidget(self.reset_progress_btn)
+
         # KI-Vorschläge immer bestätigen lassen
         self.ki_confirm_checkbox = QtWidgets.QCheckBox(_msg("KI-Vorschläge immer bestätigen lassen", "Always confirm AI suggestions"))
+        self.ki_confirm_checkbox.setToolTip(_msg(
+            "Zeigt jeden KI-Vorschlag zur Bestätigung an, bevor er übernommen wird.",
+            "Shows every AI suggestion for confirmation before applying."
+        ))
         layout.addWidget(self.ki_confirm_checkbox)
 
         # Debug-Logging aktivieren
         self.debug_logging_checkbox = QtWidgets.QCheckBox(_msg("Ausführliches Debug-Logging aktivieren", "Enable verbose debug logging"))
+        self.debug_logging_checkbox.setToolTip(_msg(
+            "Schreibt zusätzliche Debug-Informationen ins Log. Nur für Fehlersuche empfohlen!",
+            "Writes additional debug information to the log. Recommended for troubleshooting only!"
+        ))
         layout.addWidget(self.debug_logging_checkbox)
+
+        # Ordner-Button für Automatisierung
+        self.folder_btn = QtWidgets.QPushButton(_msg("Ordner verarbeiten...", "Process folder..."))
+        self.folder_btn.setToolTip(_msg(
+            "Wählt einen Ordner aus und fügt alle Musikdateien automatisch zur Verarbeitung hinzu.",
+            "Selects a folder and adds all music files for processing automatically."
+        ))
+        self.folder_btn.clicked.connect(self.process_folder)
+        layout.addWidget(self.folder_btn)
+
+        # KI-Sprache erkennen
+        self.ki_language_checkbox = QtWidgets.QCheckBox(_msg("KI-Sprache erkennen", "Enable AI language detection"))
+        self.ki_language_checkbox.setToolTip(_msg(
+            "Lässt die KI die Sprache des Songs erkennen und eintragen.",
+            "Lets the AI detect and set the language of the song."
+        ))
+        layout.addWidget(self.ki_language_checkbox)
+        # KI-Instrumente erkennen
+        self.ki_instruments_checkbox = QtWidgets.QCheckBox(_msg("KI-Instrumente erkennen", "Enable AI instrument detection"))
+        self.ki_instruments_checkbox.setToolTip(_msg(
+            "Lässt die KI die wichtigsten Instrumente im Song erkennen und eintragen.",
+            "Lets the AI detect and set the main instruments in the song."
+        ))
+        layout.addWidget(self.ki_instruments_checkbox)
+
+        # Selbsttest-Button
+        self.selftest_btn = QtWidgets.QPushButton(_msg("Selbsttest starten", "Run self-test"))
+        self.selftest_btn.setToolTip(_msg(
+            "Prüft, ob alle Abhängigkeiten, Server und KI-Modelle funktionieren.",
+            "Checks if all dependencies, servers and AI models are working."
+        ))
+        self.selftest_btn.clicked.connect(self.run_selftest)
+        layout.addWidget(self.selftest_btn)
 
         layout.addStretch(1)
         self.setLayout(layout)
@@ -345,6 +482,8 @@ class AIIDOptionsPage(OptionsPage):
             if "aiid_confirm_ai" in config.setting else False)
         self.cache_expiry_spin.setValue(int(config.setting["aiid_cache_expiry_days"] or _DEFAULT_CACHE_EXPIRY_DAYS) if "aiid_cache_expiry_days" in config.setting else _DEFAULT_CACHE_EXPIRY_DAYS)
         self.debug_logging_checkbox.setChecked(bool(config.setting[_DEBUG_LOGGING_KEY]) if _DEBUG_LOGGING_KEY in config.setting else False)
+        self.ki_language_checkbox.setChecked(bool("aiid_enable_ki_language" in config.setting and config.setting["aiid_enable_ki_language"]))
+        self.ki_instruments_checkbox.setChecked(bool("aiid_enable_ki_instruments" in config.setting and config.setting["aiid_enable_ki_instruments"]))
 
     def save(self):
         config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
@@ -358,12 +497,175 @@ class AIIDOptionsPage(OptionsPage):
         config.setting["aiid_confirm_ai"] = self.ki_confirm_checkbox.isChecked()
         config.setting["aiid_cache_expiry_days"] = self.cache_expiry_spin.value()
         config.setting[_DEBUG_LOGGING_KEY] = self.debug_logging_checkbox.isChecked()
+        config.setting["aiid_enable_ki_language"] = self.ki_language_checkbox.isChecked()
+        config.setting["aiid_enable_ki_instruments"] = self.ki_instruments_checkbox.isChecked()
 
     def clear_cache(self):
         global _aiid_cache
         _aiid_cache.clear()
         _save_cache()
         QtWidgets.QMessageBox.information(self, _msg("Info", "Info"), _msg("Cache wurde geleert.", "Cache cleared."))
+
+    def reset_progress(self):
+        global _total_files, _finished_files, _success_files, _error_files
+        _total_files = 0
+        _finished_files = 0
+        _success_files = 0
+        _error_files = 0
+        QtWidgets.QMessageBox.information(self, _msg("Info", "Info"), _msg("Fortschrittszähler wurden zurückgesetzt.", "Progress counters have been reset."))
+
+    def process_folder(self):
+        # Verzeichnisauswahl
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, _msg("Ordner auswählen", "Select folder"))
+        if not folder:
+            return
+        # Unterstützte Dateitypen
+        exts = ["mp3", "flac", "ogg", "wav"]
+        files = []
+        for ext in exts:
+            files.extend(glob.glob(os.path.join(folder, f"**/*.{ext}"), recursive=True))
+        if not files:
+            QtWidgets.QMessageBox.information(self, _msg("Keine Musikdateien gefunden", "No music files found"), _msg("Im gewählten Ordner wurden keine unterstützten Musikdateien gefunden.", "No supported music files found in the selected folder."))
+            return
+        # Fortschrittsdialog mit Abbrechen
+        progress = QtWidgets.QProgressDialog(_msg("Dateien werden hinzugefügt...", "Adding files..."), _msg("Abbrechen", "Cancel"), 0, len(files), self)
+        progress.setWindowTitle(_msg("Fortschritt", "Progress"))
+        progress.setWindowModality(QtCore.Qt.WindowModality.ApplicationModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        # Dateien wie Drag&Drop an Picard übergeben, aber in Blöcken (Chunks)
+        from picard.ui.mainwindow import MainWindow
+        mw = None
+        for widget in QtWidgets.QApplication.topLevelWidgets():
+            if isinstance(widget, MainWindow):
+                mw = widget
+                break
+        added = 0
+        if mw:
+            for chunk_start in range(0, len(files), _CHUNK_SIZE):
+                if progress.wasCanceled():
+                    break
+                chunk = files[chunk_start:chunk_start+_CHUNK_SIZE]
+                mime = QMimeData()
+                urls = [QUrl.fromLocalFile(f) for f in chunk]
+                mime.setUrls(urls)
+                drop_event = QDropEvent(QPointF(mw.mapToGlobal(mw.rect().center())), QtCore.Qt.DropAction.CopyAction, mime, QtCore.Qt.MouseButton.LeftButton, QtCore.Qt.KeyboardModifier.NoModifier)
+                QtWidgets.QApplication.sendEvent(mw, drop_event)
+                added += len(chunk)
+                progress.setValue(added)
+                QtWidgets.QApplication.processEvents()
+                # Kurze Pause, damit Picard die Dateien laden kann (z.B. 0.5s)
+                QtCore.QThread.msleep(500)
+            if added < len(files):
+                QtWidgets.QMessageBox.information(self, _msg("Abgebrochen", "Cancelled"), _msg(f"Vorgang abgebrochen. {added} von {len(files)} Dateien wurden hinzugefügt.", f"Operation cancelled. {added} of {len(files)} files were added."))
+            else:
+                QtWidgets.QMessageBox.information(self, _msg("Dateien hinzugefügt", "Files added"), _msg(f"{added} Musikdateien wurden zur Verarbeitung hinzugefügt.", f"{added} music files have been added for processing."))
+        else:
+            QtWidgets.QMessageBox.warning(self, _msg("Fehler", "Error"), _msg("Konnte das Hauptfenster nicht finden. Bitte Dateien manuell hinzufügen.", "Could not find main window. Please add files manually."))
+
+    def show_error_dialog(self, title, short_msg, details=None):
+        msg_box = QtWidgets.QMessageBox(self)
+        msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(short_msg)
+        if details:
+            msg_box.setDetailedText(details)
+        msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+        msg_box.exec()
+
+    def run_selftest(self):
+        import sys
+        results = []
+        # Python-Version
+        results.append(("Python-Version", sys.version, sys.version_info >= (3, 7)))
+        # PyQt-Version
+        try:
+            from PyQt6.QtCore import QT_VERSION_STR
+            pyqt_version = QT_VERSION_STR
+            results.append(("PyQt-Version", pyqt_version, True))
+        except Exception as e:
+            results.append(("PyQt-Version", str(e), False))
+        # Abhängigkeiten
+        for mod, name in [("pyacoustid", "pyacoustid"), ("musicbrainzngs", "musicbrainzngs"), ("requests", "requests")]:
+            try:
+                __import__(mod)
+                results.append((f"{name} installiert", "OK", True))
+            except Exception as e:
+                results.append((f"{name} installiert", str(e), False))
+        # Chromaprint-Backend
+        try:
+            fp_version = getattr(pyacoustid, '__version__', 'unbekannt')
+            results.append(("pyacoustid-Version", fp_version, True))
+        except Exception as e:
+            results.append(("pyacoustid-Version", str(e), False))
+        # AcoustID-API-Key
+        api_key = config.setting["aiid_acoustid_api_key"] if "aiid_acoustid_api_key" in config.setting else ""
+        if api_key:
+            results.append(("AcoustID API-Key", "OK", True))
+            # Test-Request
+            try:
+                # Dummy-Fingerprint (wird Fehler geben, aber API erreichbar?)
+                r = requests.get("https://api.acoustid.org/v2/userinfo", params={"client": api_key}, timeout=5)
+                if r.status_code == 200:
+                    results.append(("AcoustID API erreichbar", "OK", True))
+                else:
+                    results.append(("AcoustID API erreichbar", f"Status {r.status_code}", False))
+            except Exception as e:
+                results.append(("AcoustID API erreichbar", str(e), False))
+        else:
+            results.append(("AcoustID API-Key", _msg("Nicht gesetzt", "Not set"), False))
+        # Ollama-Server
+        ollama_url = str(config.setting["aiid_ollama_url"]) if "aiid_ollama_url" in config.setting else "http://localhost:11434"
+        try:
+            r = requests.get(ollama_url + "/api/tags", timeout=5)
+            if r.status_code == 200:
+                results.append(("Ollama-Server erreichbar", "OK", True))
+                # Modelle prüfen
+                try:
+                    tags = r.json().get("models") or r.json().get("tags") or []
+                    if tags:
+                        results.append(("Ollama-Modelle gefunden", ", ".join([str(t) for t in tags]), True))
+                    else:
+                        results.append(("Ollama-Modelle gefunden", _msg("Keine Modelle gefunden", "No models found"), False))
+                except Exception as e:
+                    results.append(("Ollama-Modelle gefunden", str(e), False))
+            else:
+                results.append(("Ollama-Server erreichbar", f"Status {r.status_code}", False))
+        except Exception as e:
+            results.append(("Ollama-Server erreichbar", str(e), False))
+        # Cache-Schreibrechte
+        try:
+            test_path = _CACHE_PATH + ".test"
+            with open(test_path, "w", encoding="utf-8") as f:
+                f.write("test")
+            os.remove(test_path)
+            results.append(("Cache-Schreibrechte", "OK", True))
+        except Exception as e:
+            results.append(("Cache-Schreibrechte", str(e), False))
+        # ThreadPool-Status
+        try:
+            from PyQt6.QtCore import QThreadPool
+            pool = QThreadPool.globalInstance()
+            if pool is not None:
+                results.append(("ThreadPool aktiv", f"maxThreadCount={pool.maxThreadCount()}", True))
+            else:
+                results.append(("ThreadPool aktiv", "None", False))
+        except Exception as e:
+            results.append(("ThreadPool aktiv", str(e), False))
+        # Ergebnis anzeigen
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(_msg("Selbsttest-Ergebnis", "Self-test result"))
+        layout = QtWidgets.QVBoxLayout(dlg)
+        for label, value, ok in results:
+            l = QtWidgets.QLabel()
+            l.setText(f"<b>{label}:</b> {value}")
+            l.setStyleSheet(f"color: {'green' if ok else 'red'};")
+            layout.addWidget(l)
+        btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn)
+        dlg.setLayout(layout)
+        dlg.exec()
 
 OPTIONS_PAGE_CLASS = AIIDOptionsPage
 
@@ -516,14 +818,16 @@ def fetch_additional_metadata(result, metadata):
             except musicbrainzngs.MusicBrainzError as e:
                 log.warning("AI Music Identifier: Failed to fetch extended MusicBrainz data for MBID %s: %s", mbid, e)
 
-class AIIDFullWorker(QThread):
+class WorkerSignals(QObject):
     result_ready = pyqtSignal(dict, object)  # (Metadaten, File-Objekt)
     error = pyqtSignal(str, object)  # (Fehlermeldung, File-Objekt)
 
+class AIIDFullRunnable(QRunnable):
     def __init__(self, file, tagger=None):
         super().__init__()
         self.file = file
         self.tagger = tagger
+        self.signals = WorkerSignals()
 
     def run(self):
         try:
@@ -533,7 +837,7 @@ class AIIDFullWorker(QThread):
             api_key = _get_api_key()
             if not api_key:
                 msg = _msg("Bitte AcoustID API-Key in den Plugin-Einstellungen setzen.", "Please set AcoustID API key in the plugin settings.")
-                self.error.emit(msg, file)
+                self.signals.error.emit(msg, file)
                 return
             # Caching: Hash über Dateipfad + Größe
             try:
@@ -545,22 +849,20 @@ class AIIDFullWorker(QThread):
                 cached = _aiid_cache[file_hash]
                 if metadata:
                     metadata.update(cached)
-                    self.result_ready.emit(dict(metadata), file)
+                    self.signals.result_ready.emit(dict(metadata), file)
                 else:
-                    self.result_ready.emit({}, file)
+                    self.signals.result_ready.emit({}, file)
                 return
-            # Fingerprint & Lookup
-            duration, fp = pyacoustid.fingerprint_file(file.filename)
-            results = pyacoustid.lookup(api_key, fp, duration)
+            # AcoustID-Lookup limitiert per Semaphore
+            with _acoustid_semaphore:
+                duration, fp = pyacoustid.fingerprint_file(file.filename)
+                results = pyacoustid.lookup(api_key, fp, duration)
             if results and 'results' in results and len(results['results']) > 0:
                 acoustid_results = results['results']
-                # Automatische Auswahl oder Dialog (nur im Hauptthread möglich!)
                 idx = 0
                 if len(acoustid_results) > 1 and not _get_auto_select():
-                    # Dialog kann nicht im Worker-Thread angezeigt werden, daher immer ersten nehmen
                     idx = 0
                 result = acoustid_results[idx]
-                # Metadaten übernehmen
                 if metadata is not None:
                     metadata["title"] = result.get("title", metadata.get("title", ""))
                     artists = result.get("artists", [{}])
@@ -568,33 +870,138 @@ class AIIDFullWorker(QThread):
                     release_groups = result.get("releasegroups", [{}])
                     metadata["album"] = release_groups[0].get("title", metadata.get("album", "")) if release_groups else metadata.get("album", "")
                     fetch_additional_metadata(result, metadata)
-                    self.result_ready.emit(dict(metadata), file)
+                    self.signals.result_ready.emit(dict(metadata), file)
                 else:
-                    self.result_ready.emit({}, file)
+                    self.signals.result_ready.emit({}, file)
             else:
-                msg = _msg("Keine Übereinstimmung gefunden für %s", "No matches found for %s") % file.filename
-                self.error.emit(msg, file)
+                # Fallback: Prüfe, ob im File-Tag eine AcoustID vorhanden ist
+                acoustid_id = None
+                if metadata and "acoustid_id" in metadata:
+                    acoustid_id = metadata["acoustid_id"]
+                elif hasattr(file, 'metadata') and file.metadata and "acoustid_id" in file.metadata:
+                    acoustid_id = file.metadata["acoustid_id"]
+                if isinstance(acoustid_id, list) and acoustid_id:
+                    acoustid_id = acoustid_id[0]
+                if isinstance(acoustid_id, str) and acoustid_id:
+                    try:
+                        # Hole Recording-Infos von MusicBrainz
+                        mb_url = f"https://musicbrainz.org/ws/2/recording?query=acoustidid:{acoustid_id}&inc=releases+artists+isrcs+tags&fmt=json"
+                        resp = requests.get(mb_url, timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if "recordings" in data and data["recordings"]:
+                                rec = data["recordings"][0]
+                                if metadata is not None:
+                                    metadata["title"] = rec.get("title", metadata.get("title", ""))
+                                    if "artist-credit" in rec and rec["artist-credit"]:
+                                        metadata["artist"] = rec["artist-credit"][0].get("name", metadata.get("artist", ""))
+                                    if "releases" in rec and rec["releases"]:
+                                        metadata["album"] = rec["releases"][0].get("title", metadata.get("album", ""))
+                                    if "isrcs" in rec and rec["isrcs"]:
+                                        metadata["isrc"] = rec["isrcs"][0]
+                                    if "tags" in rec and rec["tags"]:
+                                        metadata["genre"] = "; ".join([t["name"] for t in rec["tags"] if "name" in t])
+                                    self.signals.result_ready.emit(dict(metadata), file)
+                                else:
+                                    self.signals.result_ready.emit({}, file)
+                                return
+                    except Exception as e:
+                        log.warning(f"AI Music Identifier: Fallback über AcoustID-Tag fehlgeschlagen: {e}")
+                # Wenn kein Fallback möglich, wie bisher Fehler melden
+                msg = _msg(
+                    "Keine Übereinstimmung gefunden – Datei ist nicht in der AcoustID-Datenbank. Mehr Infos: https://acoustid.org/\n(Hinweis: Auch Fallback über gespeicherte AcoustID im Tag brachte keinen Treffer)",
+                    "No match found – file is not in the AcoustID database. More info: https://acoustid.org/\n(Note: Fallback using stored AcoustID in tag also failed)"
+                )
+                self.signals.error.emit(msg, file)
         except pyacoustid.NoBackendError:
             msg = _msg("Chromaprint-Backend nicht gefunden. Bitte libchromaprint installieren.", "Chromaprint backend not found. Please install libchromaprint.")
-            self.error.emit(msg, self.file)
+            self.signals.error.emit(msg, self.file)
         except pyacoustid.FingerprintGenerationError:
             msg = _msg("Fehler beim Fingerprinting von %s", "Failed to fingerprint %s") % self.file.filename
-            self.error.emit(msg, self.file)
+            self.signals.error.emit(msg, self.file)
         except pyacoustid.WebServiceError as e:
             msg = _msg("AcoustID API-Fehler für %s", "AcoustID API error for %s") % self.file.filename
-            self.error.emit(msg, self.file)
+            self.signals.error.emit(msg, self.file)
         except Exception as e:
             msg = _msg("Fehler bei der Verarbeitung von %s", "Error processing %s") % self.file.filename
-            self.error.emit(f"{msg}: {e}", self.file)
+            self.signals.error.emit(f"{msg}: {e}", self.file)
+
+# Zentraler ThreadPool für alle Aufgaben
+# Dynamische Thread-Anzahl: mindestens 2, maximal 8 oder so viele Kerne wie vorhanden
+_THREADPOOL_MAX = min(max(os.cpu_count() or 2, 2), 8)
+_threadpool = QThreadPool()
+_threadpool.setMaxThreadCount(_THREADPOOL_MAX)
+log.info(f"AI Music Identifier: ThreadPool verwendet {_THREADPOOL_MAX} Threads (CPU-Kerne: {os.cpu_count()})")
 
 _active_workers = []  # Referenzen auf laufende Worker, damit sie nicht vorzeitig zerstört werden
 
+# Fortschrittszähler für Batch-Verarbeitung
+_total_files = 0
+_finished_files = 0
+_success_files = 0
+_error_files = 0
+
+# Für Status-Update-Throttling
+_last_status_update = 0
+_STATUS_UPDATE_INTERVAL = 0.2  # Sekunden
+
+# Adaptive Parallelität: Fehler-Tracking
+_ADAPTIVE_PARALLEL_WINDOW = 30  # Sekunden
+_ADAPTIVE_PARALLEL_ERROR_THRESHOLD = 5  # Fehler im Zeitfenster, ab dann reduzieren
+_ADAPTIVE_PARALLEL_MIN = 2
+_ADAPTIVE_PARALLEL_MAX = _THREADPOOL_MAX
+_error_timestamps = []
+_last_parallel_increase = 0
+
+def _adaptive_parallel_check():
+    global _error_timestamps, _threadpool, _THREADPOOL_MAX, _last_parallel_increase
+    import time as _time
+    now = _time.time()
+    # Entferne alte Fehler
+    _error_timestamps = [t for t in _error_timestamps if now - t < _ADAPTIVE_PARALLEL_WINDOW]
+    # Zu viele Fehler? Reduziere Parallelität
+    if len(_error_timestamps) >= _ADAPTIVE_PARALLEL_ERROR_THRESHOLD and _threadpool.maxThreadCount() > _ADAPTIVE_PARALLEL_MIN:
+        new_count = max(_ADAPTIVE_PARALLEL_MIN, _threadpool.maxThreadCount() - 1)
+        _threadpool.setMaxThreadCount(new_count)
+        log.warning(f"AI Music Identifier: Zu viele Fehler/Timeouts ({len(_error_timestamps)} in {_ADAPTIVE_PARALLEL_WINDOW}s) – Parallelität reduziert auf {new_count}.")
+    # Wenn längere Zeit keine Fehler, erhöhe langsam wieder
+    elif len(_error_timestamps) == 0 and _threadpool.maxThreadCount() < _ADAPTIVE_PARALLEL_MAX and now - _last_parallel_increase > _ADAPTIVE_PARALLEL_WINDOW:
+        new_count = min(_ADAPTIVE_PARALLEL_MAX, _threadpool.maxThreadCount() + 1)
+        _threadpool.setMaxThreadCount(new_count)
+        log.info(f"AI Music Identifier: Parallelität wieder erhöht auf {new_count}.")
+        _last_parallel_increase = now
+
+def _update_progress_status(tagger=None):
+    global _last_status_update
+    import time as _time
+    now = _time.time()
+    # Immer sofort aktualisieren, wenn fertig
+    if _total_files > 0 and (_finished_files == _total_files or now - _last_status_update > _STATUS_UPDATE_INTERVAL):
+        msg = f"AI Music Identifier: {_finished_files}/{_total_files} Dateien verarbeitet ({_success_files} erfolgreich, {_error_files} Fehler/Timeouts)"
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
+        else:
+            log.info(msg)
+        _last_status_update = now
+
 def file_post_load_processor(file):
+    global _total_files, _finished_files, _success_files, _error_files
     tagger = getattr(file, 'tagger', None)
     metadata = getattr(file, 'metadata', None)
+    # Zähler zurücksetzen, wenn ein neuer Batch gestartet wird
+    if _finished_files == _total_files and _total_files > 0:
+        _total_files = 0
+        _finished_files = 0
+        _success_files = 0
+        _error_files = 0
+    _total_files += 1
+    _update_progress_status(tagger)
     def on_worker_result(new_metadata, file_obj):
-        if worker in _active_workers:
-            _active_workers.remove(worker)
+        global _finished_files, _success_files
+        _finished_files += 1
+        _success_files += 1
+        _update_progress_status(tagger)
+        _adaptive_parallel_check()
         if metadata is not None:
             metadata.update(new_metadata)
         # KI-Genre/Mood wie gehabt (im Hauptthread, inkl. Dialoge und Thread-Limitierung)
@@ -627,6 +1034,22 @@ def file_post_load_processor(file):
             metadata["mood"] = mood
             log.info(_msg(f"AI Music Identifier: KI-Stimmung als 'mood_ai' gespeichert: {mood}", f"AI Music Identifier: KI mood saved as 'mood_ai': {mood}"))
             log.info(_msg("AI Music Identifier: Stimmung per Ollama übernommen: %s", "AI Music Identifier: Mood from Ollama accepted: %s") % mood)
+            # Jetzt ggf. Language-Worker starten
+            start_language_worker()
+        def after_language():
+            if metadata is not None and ("aiid_enable_ki_language" in config.setting and config.setting["aiid_enable_ki_language"]):
+                language = get_language_suggestion(metadata.get('title', ''), metadata.get('artist', ''), tagger, file.filename)
+                if language and "Fehler" not in language:
+                    metadata["language_ai"] = language
+                    log.info(_msg(f"AI Music Identifier: KI-Sprache als 'language_ai' gespeichert: {language}", f"AI Music Identifier: AI language saved as 'language_ai': {language}"))
+            # Jetzt ggf. Instruments-Worker starten
+            start_instruments_worker()
+        def after_instruments():
+            if metadata is not None and ("aiid_enable_ki_instruments" in config.setting and config.setting["aiid_enable_ki_instruments"]):
+                instruments = get_instruments_suggestion(metadata.get('title', ''), metadata.get('artist', ''), tagger, file.filename)
+                if instruments and "Fehler" not in instruments:
+                    metadata["instruments_ai"] = instruments
+                    log.info(_msg(f"AI Music Identifier: KI-Instrumente als 'instruments_ai' gespeichert: {instruments}", f"AI Music Identifier: AI instruments saved as 'instruments_ai': {instruments}"))
             # Cache speichern
             file_hash = hashlib.sha1((file.filename + str(file.size)).encode("utf-8")).hexdigest() if file.filename and hasattr(file, 'size') else None
             use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
@@ -653,11 +1076,10 @@ def file_post_load_processor(file):
                         "Antworte nur mit dem Genre, ohne weitere Erklärungen."
                     )
                     model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
-                    worker = AIWorker(prompt, model, "genre", tagger)
-                    worker.result_ready.connect(after_genre)
-                    worker.error.connect(on_error)
-                    worker.finished.connect(_on_ki_worker_finished)
-                    worker.start()
+                    runnable = AIKIRunnable(prompt, model, "genre", tagger)
+                    runnable.signals.result_ready.connect(after_genre)
+                    runnable.signals.error.connect(on_error)
+                    _threadpool.start(runnable)
                     return
             # Wenn kein Genre-Worker nötig, direkt Mood-Worker starten
             start_mood_worker()
@@ -669,37 +1091,88 @@ def file_post_load_processor(file):
                     "Antworte nur mit einem Wort (z.B. fröhlich, melancholisch, energetisch)."
                 )
                 model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
-                worker = AIWorker(prompt, model, "mood", tagger)
-                worker.result_ready.connect(after_mood)
-                worker.error.connect(on_error)
-                worker.finished.connect(_on_ki_worker_finished)
-                worker.start()
+                runnable = AIKIRunnable(prompt, model, "mood", tagger)
+                runnable.signals.result_ready.connect(after_mood)
+                runnable.signals.error.connect(on_error)
+                _threadpool.start(runnable)
                 return
-            # Wenn kein Mood-Worker nötig, Metadaten/Cache speichern
-            file_hash = hashlib.sha1((file.filename + str(file.size)).encode("utf-8")).hexdigest() if file.filename and hasattr(file, 'size') else None
-            use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
-            if use_cache and file_hash and metadata is not None:
-                _aiid_cache[file_hash] = dict(metadata)
-                _save_cache()
-            msg = _msg("Metadaten aktualisiert für %s", "Updated metadata for %s") % file.filename
-            if tagger and hasattr(tagger, 'window'):
-                tagger.window.set_statusbar_message(msg)
-            log.debug("AI Music Identifier: Updated metadata: %s", metadata)
+            # Wenn kein Mood-Worker nötig, Language-Worker starten
+            start_language_worker()
+        def start_language_worker():
+            if metadata is not None and ("aiid_enable_ki_language" in config.setting and config.setting["aiid_enable_ki_language"]):
+                after_language()
+            else:
+                start_instruments_worker()
+        def start_instruments_worker():
+            if metadata is not None and ("aiid_enable_ki_instruments" in config.setting and config.setting["aiid_enable_ki_instruments"]):
+                after_instruments()
+            else:
+                # Cache speichern
+                file_hash = hashlib.sha1((file.filename + str(file.size)).encode("utf-8")).hexdigest() if file.filename and hasattr(file, 'size') else None
+                use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+                if use_cache and file_hash and metadata is not None:
+                    _aiid_cache[file_hash] = dict(metadata)
+                    _save_cache()
+                msg = _msg("Metadaten aktualisiert für %s", "Updated metadata for %s") % file.filename
+                if tagger and hasattr(tagger, 'window'):
+                    tagger.window.set_statusbar_message(msg)
+                log.debug("AI Music Identifier: Updated metadata: %s", metadata)
         # Starte KI-Worker-Kette
         start_genre_worker()
     def on_worker_error(msg, file_obj):
-        if worker in _active_workers:
-            _active_workers.remove(worker)
-        log.warning("AI Music Identifier: Fehler im Hintergrund-Worker für Datei %s: %s", getattr(file_obj, 'filename', 'unbekannt'), msg)
+        global _finished_files, _error_files, _error_timestamps
+        _finished_files += 1
+        _error_files += 1
+        import time as _time
+        _error_timestamps.append(_time.time())
+        _update_progress_status(tagger)
+        _adaptive_parallel_check()
+        # Benutzerfreundliche Fehlerausgabe
+        if "AcoustID" in msg or "keine Übereinstimmung" in msg or "No match" in msg:
+            user_msg = msg + _msg(
+                "\nDu kannst die Datei über Picard und MusicBrainz als neuen Release eintragen. Nach dem Speichern wird der Fingerprint automatisch an AcoustID übertragen. Mehr Infos: https://acoustid.org/ und https://musicbrainz.org/doc/How_to_Add_a_Release",
+                "\nYou can add the file as a new release via Picard and MusicBrainz. After saving, the fingerprint will be automatically submitted to AcoustID. More info: https://acoustid.org/ and https://musicbrainz.org/doc/How_to_Add_a_Release"
+            )
+        elif "Timeout" in msg or "timeout" in msg:
+            user_msg = _msg(
+                f"KI-Timeout: Die Anfrage an den Ollama-Server hat zu lange gedauert. Tipp: Timeout in den Plugin-Optionen erhöhen oder Server prüfen. ({msg})",
+                f"AI timeout: The request to the Ollama server took too long. Tip: Increase timeout in plugin options or check server. ({msg})"
+            )
+        elif "Netzwerk" in msg or "network" in msg:
+            user_msg = _msg(
+                f"KI-Netzwerkfehler: Keine Verbindung zum Ollama-Server. Läuft der Server? ({msg})",
+                f"AI network error: Could not connect to Ollama server. Is the server running? ({msg})"
+            )
+        else:
+            user_msg = msg
+        log.warning("AI Music Identifier: Fehler im Hintergrund-Worker für Datei %s: %s", getattr(file_obj, 'filename', 'unbekannt'), user_msg)
         if tagger and hasattr(tagger, 'window'):
-            tagger.window.set_statusbar_message(msg)
-    # Starte den FullWorker
-    worker = AIIDFullWorker(file, tagger)
-    _active_workers.append(worker)
-    worker.result_ready.connect(on_worker_result)
-    worker.error.connect(on_worker_error)
-    worker.finished.connect(lambda: _active_workers.remove(worker) if worker in _active_workers else None)
-    worker.start()
+            tagger.window.set_statusbar_message(user_msg)
+        # Erweiterte Fehleranzeige als Dialog
+        parent = getattr(tagger, 'window', None)
+        title = _msg("Fehler", "Error")
+        short_msg = user_msg.split("\n")[0] if "\n" in user_msg else user_msg
+        details = user_msg if short_msg != user_msg else None
+        # Nur Dialog anzeigen, wenn Einzeldatei oder explizit gewünscht
+        if _total_files <= 1:
+            if parent and hasattr(parent, "show_error_dialog"):
+                parent.show_error_dialog(title, short_msg, details)
+            else:
+                # Fallback: Standard-Fehlerdialog anzeigen
+                msg_box = QtWidgets.QMessageBox(parent)
+                msg_box.setIcon(QtWidgets.QMessageBox.Icon.Critical)
+                msg_box.setWindowTitle(title)
+                msg_box.setText(short_msg)
+                if details:
+                    msg_box.setDetailedText(details)
+                msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
+                msg_box.exec()
+        # Bei Batch-Verarbeitung (mehrere Dateien): kein Popup, nur Status/Log
+    # Starte den FullRunnable im ThreadPool
+    runnable = AIIDFullRunnable(file, tagger)
+    runnable.signals.result_ready.connect(on_worker_result)
+    runnable.signals.error.connect(on_worker_error)
+    _threadpool.start(runnable)
 
 register_file_post_load_processor(file_post_load_processor)
 OPTIONS_PAGE_CLASS = AIIDOptionsPage
