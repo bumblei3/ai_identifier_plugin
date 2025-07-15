@@ -26,6 +26,11 @@ import threading
 import glob
 from PyQt6.QtGui import QDropEvent, QDragEnterEvent
 from PyQt6.QtCore import QMimeData, QPointF
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    _HAS_PSUTIL = False
 
 # Globale Thread-Limitierung für KI-Worker
 _MAX_KI_THREADS = 2
@@ -107,6 +112,9 @@ def _save_cache():
 # Cache beim Laden des Plugins initialisieren
 _load_cache()
 
+# Globale Fehlerliste für Batch-Fehlerübersicht
+_batch_errors = []
+
 # Hole die Einstellung für automatische Auswahl
 _DEF_AUTO_SELECT = False
 
@@ -148,20 +156,29 @@ def call_ollama(prompt, model="mistral", tagger=None, file_name=None):
         log.info(f"AI Music Identifier: Ollama-Antwort erhalten für Datei {file_name}: {result}")
         return result
     except requests.Timeout as e:
-        log.error(_msg(f"AI Music Identifier: Timeout bei Ollama-Anfrage für Datei {file_name}: {e}", f"AI Music Identifier: Timeout on Ollama request for file {file_name}: {e}"))
+        msg = _msg(f"[Netzwerkfehler] KI-Timeout bei Ollama-Anfrage für Datei {file_name}: {e}", f"[Network error] AI timeout on Ollama request for file {file_name}: {e}")
+        log.error(msg)
         if tagger and hasattr(tagger, 'window'):
-            tagger.window.set_statusbar_message(_msg(f"KI-Timeout: {e}", f"AI timeout: {e}"))
-        return f"Fehler bei Ollama-Anfrage (Timeout): {e}"
+            tagger.window.set_statusbar_message(msg)
+        return msg
     except requests.ConnectionError as e:
-        log.error(_msg(f"AI Music Identifier: Netzwerkfehler bei Ollama-Anfrage für Datei {file_name}: {e}", f"AI Music Identifier: Network error on Ollama request for file {file_name}: {e}"))
+        msg = _msg(f"[Netzwerkfehler] KI-Netzwerkfehler bei Ollama-Anfrage für Datei {file_name}: {e}", f"[Network error] AI network error on Ollama request for file {file_name}: {e}")
+        log.error(msg)
         if tagger and hasattr(tagger, 'window'):
-            tagger.window.set_statusbar_message(_msg(f"KI-Netzwerkfehler: {e}", f"AI network error: {e}"))
-        return f"Fehler bei Ollama-Anfrage (Netzwerk): {e}"
+            tagger.window.set_statusbar_message(msg)
+        return msg
+    except requests.HTTPError as e:
+        msg = _msg(f"[API-Fehler] HTTP-Fehler bei Ollama-Anfrage für Datei {file_name}: {e}", f"[API error] HTTP error on Ollama request for file {file_name}: {e}")
+        log.error(msg)
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(msg)
+        return msg
     except Exception as e:
-        log.error(_msg(f"AI Music Identifier: Fehler bei Ollama-Anfrage für Datei {file_name}: {e}", f"AI Music Identifier: Error on Ollama request for file {file_name}: {e}"))
+        msg = _msg(f"[Lokaler Fehler] Fehler bei Ollama-Anfrage für Datei {file_name}: {e}", f"[Local error] Error on Ollama request for file {file_name}: {e}")
+        log.error(msg)
         if tagger and hasattr(tagger, 'window'):
-            tagger.window.set_statusbar_message(_msg(f"KI-Fehler: {e}", f"AI error: {e}"))
-        return f"Fehler bei Ollama-Anfrage: {e}"
+            tagger.window.set_statusbar_message(msg)
+        return msg
 
 class AIKIRunnable(QRunnable):
     def __init__(self, prompt, model, field, tagger=None):
@@ -306,6 +323,25 @@ def get_instruments_suggestion(title, artist, tagger=None, file_name=None):
             _aiid_cache[cache_key] = {"value": instruments, "ts": time.time()}
             _save_cache()
     return instruments
+
+def get_mood_emoji_suggestion(title, artist, tagger=None, file_name=None):
+    prompt = (
+        f"Welches Emoji passt am besten zur Stimmung des Songs '{title}' von '{artist}'? "
+        "Antworte nur mit einem Emoji, ohne weitere Erklärungen."
+    )
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_mood_emoji::" + model + f"::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            return v["value"]
+    emoji = call_ollama(prompt, model, tagger, file_name)
+    if emoji and "Fehler" not in emoji:
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": emoji, "ts": time.time()}
+            _save_cache()
+    return emoji
 
 class AIIDOptionsPage(OptionsPage):
     NAME = "ai_identifier"
@@ -457,6 +493,14 @@ class AIIDOptionsPage(OptionsPage):
         ))
         layout.addWidget(self.ki_instruments_checkbox)
 
+        # KI-Stimmungs-Emoji erkennen
+        self.ki_mood_emoji_checkbox = QtWidgets.QCheckBox(_msg("KI-Stimmungs-Emoji erkennen", "Enable AI mood emoji"))
+        self.ki_mood_emoji_checkbox.setToolTip(_msg(
+            "Lässt die KI ein passendes Emoji zur Stimmung des Songs erkennen und eintragen.",
+            "Lets the AI detect and set a fitting emoji for the song's mood."
+        ))
+        layout.addWidget(self.ki_mood_emoji_checkbox)
+
         # Selbsttest-Button
         self.selftest_btn = QtWidgets.QPushButton(_msg("Selbsttest starten", "Run self-test"))
         self.selftest_btn.setToolTip(_msg(
@@ -466,8 +510,42 @@ class AIIDOptionsPage(OptionsPage):
         self.selftest_btn.clicked.connect(self.run_selftest)
         layout.addWidget(self.selftest_btn)
 
+        # Ressourcenmonitor
+        if _HAS_PSUTIL:
+            self.resource_label = QtWidgets.QLabel()
+            self.resource_label.setToolTip(_msg(
+                "Zeigt die aktuelle CPU- und RAM-Auslastung des Systems und des Picard-Prozesses.",
+                "Shows current CPU and RAM usage of the system and the Picard process."
+            ))
+            layout.addWidget(self.resource_label)
+            self._resource_timer = QtCore.QTimer(self)
+            self._resource_timer.timeout.connect(self.update_resource_label)
+            self._resource_timer.start(2000)
+            self.update_resource_label()
+        else:
+            self.resource_label = QtWidgets.QLabel(_msg(
+                "Hinweis: Für die Ressourcenanzeige muss das Python-Modul 'psutil' installiert sein.",
+                "Note: For resource monitoring, the Python module 'psutil' must be installed."
+            ))
+            layout.addWidget(self.resource_label)
+
         layout.addStretch(1)
         self.setLayout(layout)
+
+    def update_resource_label(self):
+        if not _HAS_PSUTIL:
+            return
+        cpu = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory().percent
+        proc = psutil.Process()
+        cpu_count = psutil.cpu_count() or 1
+        proc_cpu = proc.cpu_percent(interval=None) / cpu_count
+        proc_mem = proc.memory_info().rss / (1024*1024)
+        txt = _msg(
+            f"System: CPU {cpu:.1f}%  RAM {ram:.1f}%\nPicard: CPU {proc_cpu:.1f}%  RAM {proc_mem:.1f} MB",
+            f"System: CPU {cpu:.1f}%  RAM {ram:.1f}%\nPicard: CPU {proc_cpu:.1f}%  RAM {proc_mem:.1f} MB"
+        )
+        self.resource_label.setText(txt)
 
     def load(self):
         self.api_key_edit.setText(str(config.setting["aiid_acoustid_api_key"]) if "aiid_acoustid_api_key" in config.setting else "")
@@ -484,6 +562,7 @@ class AIIDOptionsPage(OptionsPage):
         self.debug_logging_checkbox.setChecked(bool(config.setting[_DEBUG_LOGGING_KEY]) if _DEBUG_LOGGING_KEY in config.setting else False)
         self.ki_language_checkbox.setChecked(bool("aiid_enable_ki_language" in config.setting and config.setting["aiid_enable_ki_language"]))
         self.ki_instruments_checkbox.setChecked(bool("aiid_enable_ki_instruments" in config.setting and config.setting["aiid_enable_ki_instruments"]))
+        self.ki_mood_emoji_checkbox.setChecked(bool("aiid_enable_ki_mood_emoji" in config.setting and config.setting["aiid_enable_ki_mood_emoji"]))
 
     def save(self):
         config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
@@ -499,6 +578,7 @@ class AIIDOptionsPage(OptionsPage):
         config.setting[_DEBUG_LOGGING_KEY] = self.debug_logging_checkbox.isChecked()
         config.setting["aiid_enable_ki_language"] = self.ki_language_checkbox.isChecked()
         config.setting["aiid_enable_ki_instruments"] = self.ki_instruments_checkbox.isChecked()
+        config.setting["aiid_enable_ki_mood_emoji"] = self.ki_mood_emoji_checkbox.isChecked()
 
     def clear_cache(self):
         global _aiid_cache
@@ -745,13 +825,12 @@ def select_result_dialog(results, parent=None):
         return list_widget.currentRow()
     return None
 
-def fetch_additional_metadata(result, metadata):
+def fetch_additional_metadata(result, metadata, on_mb_details=None):
     # Genre
     if "tags" in result and not metadata.get("genre"):
         tags = result["tags"]
         genres = []
         if isinstance(tags, list):
-            # Liste von Tags (z.B. [{'name': 'Rock'}, {'name': 'Pop'}] oder ['Rock', 'Pop'])
             for tag in tags:
                 if isinstance(tag, dict) and "name" in tag:
                     genres.append(tag["name"])
@@ -794,29 +873,12 @@ def fetch_additional_metadata(result, metadata):
         if "isrcs" in rec and rec["isrcs"] and not metadata.get("isrc"):
             metadata["isrc"] = rec["isrcs"][0]
             log.info(_msg(f"AI Music Identifier: ISRC ergänzt: {metadata['isrc']}", f"AI Music Identifier: ISRC added: {metadata['isrc']}"))
-    # Label, Tracknummer
+    # Label, Tracknummer asynchron holen
     if "recordings" in result and result["recordings"]:
         mbid = result["recordings"][0].get("id")
-        if mbid:
-            try:
-                release = musicbrainzngs.get_recording_by_id(mbid, includes=["releases", "isrcs", "artist-credits", "tags"])
-                release_list = release["recording"].get("release-list", [])
-                if release_list:
-                    rel = release_list[0]
-                    # Label
-                    if "label-info-list" in rel and rel["label-info-list"]:
-                        label = rel["label-info-list"][0].get("label", {}).get("name")
-                        if label and not metadata.get("label"):
-                            metadata["label"] = label
-                            log.info(_msg(f"AI Music Identifier: Label ergänzt: {label}", f"AI Music Identifier: Label added: {label}"))
-                    # Tracknummer
-                    if "medium-list" in rel and rel["medium-list"]:
-                        tracks = rel["medium-list"][0].get("track-list", [])
-                        if tracks and not metadata.get("tracknumber"):
-                            metadata["tracknumber"] = tracks[0].get("number")
-                            log.info(_msg(f"AI Music Identifier: Tracknummer ergänzt: {metadata['tracknumber']}", f"AI Music Identifier: Track number added: {metadata['tracknumber']}"))
-            except musicbrainzngs.MusicBrainzError as e:
-                log.warning("AI Music Identifier: Failed to fetch extended MusicBrainz data for MBID %s: %s", mbid, e)
+        if mbid and on_mb_details:
+            worker = MBDetailWorker(mbid, metadata, on_mb_details)
+            _threadpool.start(worker)
 
 class WorkerSignals(QObject):
     result_ready = pyqtSignal(dict, object)  # (Metadaten, File-Objekt)
@@ -855,8 +917,25 @@ class AIIDFullRunnable(QRunnable):
                 return
             # AcoustID-Lookup limitiert per Semaphore
             with _acoustid_semaphore:
-                duration, fp = pyacoustid.fingerprint_file(file.filename)
-                results = pyacoustid.lookup(api_key, fp, duration)
+                try:
+                    duration, fp = pyacoustid.fingerprint_file(file.filename)
+                    results = pyacoustid.lookup(api_key, fp, duration)
+                except pyacoustid.WebServiceError as e:
+                    msg = _msg(f"[API-Fehler] AcoustID API-Fehler für {file.filename}: {e}", f"[API error] AcoustID API error for {file.filename}: {e}")
+                    self.signals.error.emit(msg, file)
+                    return
+                except pyacoustid.NoBackendError:
+                    msg = _msg("[Lokaler Fehler] Chromaprint-Backend nicht gefunden. Bitte libchromaprint installieren.", "[Local error] Chromaprint backend not found. Please install libchromaprint.")
+                    self.signals.error.emit(msg, file)
+                    return
+                except pyacoustid.FingerprintGenerationError:
+                    msg = _msg(f"[Lokaler Fehler] Fehler beim Fingerprinting von {file.filename}", f"[Local error] Failed to fingerprint {file.filename}")
+                    self.signals.error.emit(msg, file)
+                    return
+                except Exception as e:
+                    msg = _msg(f"[Netzwerkfehler] Fehler beim AcoustID-Lookup für {file.filename}: {e}", f"[Network error] Error during AcoustID lookup for {file.filename}: {e}")
+                    self.signals.error.emit(msg, file)
+                    return
             if results and 'results' in results and len(results['results']) > 0:
                 acoustid_results = results['results']
                 idx = 0
@@ -869,10 +948,17 @@ class AIIDFullRunnable(QRunnable):
                     metadata["artist"] = artists[0].get("name", metadata.get("artist", "")) if artists else metadata.get("artist", "")
                     release_groups = result.get("releasegroups", [{}])
                     metadata["album"] = release_groups[0].get("title", metadata.get("album", "")) if release_groups else metadata.get("album", "")
-                    fetch_additional_metadata(result, metadata)
-                    self.signals.result_ready.emit(dict(metadata), file)
-                else:
-                    self.signals.result_ready.emit({}, file)
+                    def on_mb_details(label, tracknumber, meta):
+                        if label and not meta.get("label"):
+                            meta["label"] = label
+                            log.info(_msg(f"AI Music Identifier: Label ergänzt: {label}", f"AI Music Identifier: Label added: {label}"))
+                        if tracknumber and not meta.get("tracknumber"):
+                            meta["tracknumber"] = tracknumber
+                            log.info(_msg(f"AI Music Identifier: Tracknummer ergänzt: {tracknumber}", f"AI Music Identifier: Track number added: {tracknumber}"))
+                        self.signals.result_ready.emit(dict(meta), file)
+                    fetch_additional_metadata(result, metadata, on_mb_details=on_mb_details)
+                    # Ergebnis wird jetzt erst im Callback weitergegeben!
+                    return
             else:
                 # Fallback: Prüfe, ob im File-Tag eine AcoustID vorhanden ist
                 acoustid_id = None
@@ -887,32 +973,23 @@ class AIIDFullRunnable(QRunnable):
                         # Hole Recording-Infos von MusicBrainz
                         mb_url = f"https://musicbrainz.org/ws/2/recording?query=acoustidid:{acoustid_id}&inc=releases+artists+isrcs+tags&fmt=json"
                         resp = requests.get(mb_url, timeout=10)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            if "recordings" in data and data["recordings"]:
-                                rec = data["recordings"][0]
-                                if metadata is not None:
-                                    metadata["title"] = rec.get("title", metadata.get("title", ""))
-                                    if "artist-credit" in rec and rec["artist-credit"]:
-                                        metadata["artist"] = rec["artist-credit"][0].get("name", metadata.get("artist", ""))
-                                    if "releases" in rec and rec["releases"]:
-                                        metadata["album"] = rec["releases"][0].get("title", metadata.get("album", ""))
-                                    if "isrcs" in rec and rec["isrcs"]:
-                                        metadata["isrc"] = rec["isrcs"][0]
-                                    if "tags" in rec and rec["tags"]:
-                                        metadata["genre"] = "; ".join([t["name"] for t in rec["tags"] if "name" in t])
-                                    self.signals.result_ready.emit(dict(metadata), file)
-                                else:
-                                    self.signals.result_ready.emit({}, file)
-                                return
+                        resp.raise_for_status()
+                    except requests.Timeout as e:
+                        msg = _msg(f"[Netzwerkfehler] Timeout bei MusicBrainz-Request für {file.filename}: {e}", f"[Network error] Timeout on MusicBrainz request for {file.filename}: {e}")
+                        self.signals.error.emit(msg, file)
+                        return
+                    except requests.ConnectionError as e:
+                        msg = _msg(f"[Netzwerkfehler] Netzwerkfehler bei MusicBrainz-Request für {file.filename}: {e}", f"[Network error] Network error on MusicBrainz request for {file.filename}: {e}")
+                        self.signals.error.emit(msg, file)
+                        return
+                    except requests.HTTPError as e:
+                        msg = _msg(f"[API-Fehler] HTTP-Fehler bei MusicBrainz-Request für {file.filename}: {e}", f"[API error] HTTP error on MusicBrainz request for {file.filename}: {e}")
+                        self.signals.error.emit(msg, file)
+                        return
                     except Exception as e:
-                        log.warning(f"AI Music Identifier: Fallback über AcoustID-Tag fehlgeschlagen: {e}")
-                # Wenn kein Fallback möglich, wie bisher Fehler melden
-                msg = _msg(
-                    "Keine Übereinstimmung gefunden – Datei ist nicht in der AcoustID-Datenbank. Mehr Infos: https://acoustid.org/\n(Hinweis: Auch Fallback über gespeicherte AcoustID im Tag brachte keinen Treffer)",
-                    "No match found – file is not in the AcoustID database. More info: https://acoustid.org/\n(Note: Fallback using stored AcoustID in tag also failed)"
-                )
-                self.signals.error.emit(msg, file)
+                        msg = _msg(f"[Lokaler Fehler] Fehler bei MusicBrainz-Request für {file.filename}: {e}", f"[Local error] Error on MusicBrainz request for {file.filename}: {e}")
+                        self.signals.error.emit(msg, file)
+                        return
         except pyacoustid.NoBackendError:
             msg = _msg("Chromaprint-Backend nicht gefunden. Bitte libchromaprint installieren.", "Chromaprint backend not found. Please install libchromaprint.")
             self.signals.error.emit(msg, self.file)
@@ -971,6 +1048,96 @@ def _adaptive_parallel_check():
         log.info(f"AI Music Identifier: Parallelität wieder erhöht auf {new_count}.")
         _last_parallel_increase = now
 
+def _show_batch_error_dialog(parent=None):
+    if not _batch_errors:
+        return
+    dlg = QtWidgets.QDialog(parent)
+    dlg.setWindowTitle(_msg("Fehlerübersicht (Batch)", "Batch Error Summary"))
+    layout = QtWidgets.QVBoxLayout(dlg)
+    total = _total_files if '_total_files' in globals() else len(_batch_errors)
+    label = QtWidgets.QLabel(_msg(f"{len(_batch_errors)} Fehler bei {total} Dateien:", f"{len(_batch_errors)} errors for {total} files:"))
+    layout.addWidget(label)
+    search_layout = QtWidgets.QHBoxLayout()
+    search_edit = QtWidgets.QLineEdit()
+    search_edit.setPlaceholderText(_msg("Fehler filtern...", "Filter errors..."))
+    search_edit.setToolTip(_msg("Gib einen Suchbegriff ein, um die Fehlerliste zu filtern (Dateiname, Emoji oder Fehlertext).", "Enter a search term to filter the error list (filename, emoji or error text)."))
+    search_layout.addWidget(search_edit)
+    layout.addLayout(search_layout)
+    # Prüfe, ob mindestens ein Fehler ein Emoji enthält
+    has_emoji = any(len(e) == 3 and e[2] for e in _batch_errors)
+    col_count = 3 if has_emoji else 2
+    table = QtWidgets.QTableWidget(len(_batch_errors), col_count)
+    headers = [_msg("Datei", "File")]
+    if has_emoji:
+        headers.append(_msg("Emoji", "Emoji"))
+    headers.append(_msg("Fehler", "Error"))
+    table.setHorizontalHeaderLabels(headers)
+    header = table.horizontalHeader()
+    if header is not None:
+        header.setStretchLastSection(True)
+        table.setSortingEnabled(True)
+    for row, entry in enumerate(_batch_errors):
+        filename = entry[0]
+        errmsg = entry[1]
+        emoji = entry[2] if len(entry) > 2 else ""
+        table.setItem(row, 0, QtWidgets.QTableWidgetItem(filename))
+        col = 1
+        if has_emoji:
+            table.setItem(row, col, QtWidgets.QTableWidgetItem(emoji))
+            col += 1
+        table.setItem(row, col, QtWidgets.QTableWidgetItem(errmsg))
+    layout.addWidget(table)
+    def filter_table():
+        term = search_edit.text().lower()
+        for row in range(table.rowCount()):
+            texts = []
+            for c in range(table.columnCount()):
+                item = table.item(row, c)
+                texts.append(item.text().lower() if item is not None else "")
+            show = any(term in t for t in texts)
+            table.setRowHidden(row, not show)
+    search_edit.textChanged.connect(filter_table)
+    btn_layout = QtWidgets.QHBoxLayout()
+    copy_btn = QtWidgets.QPushButton(_msg("Fehler als Text kopieren", "Copy errors as text"))
+    copy_btn.setToolTip(_msg("Kopiert alle Fehler als Text in die Zwischenablage.", "Copy all errors as text to clipboard."))
+    def copy_errors():
+        lines = []
+        for entry in _batch_errors:
+            if len(entry) == 3:
+                lines.append(f"{entry[0]} {entry[2]}: {entry[1]}")
+            else:
+                lines.append(f"{entry[0]}: {entry[1]}")
+        text = "\n".join(lines)
+        clipboard = QtWidgets.QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
+    copy_btn.clicked.connect(copy_errors)
+    btn_layout.addWidget(copy_btn)
+    save_btn = QtWidgets.QPushButton(_msg("Fehler als Datei speichern", "Save errors as file"))
+    save_btn.setToolTip(_msg("Speichert alle Fehler als Textdatei (TXT).", "Save all errors as a text file (TXT)."))
+    def save_errors():
+        lines = []
+        for entry in _batch_errors:
+            if len(entry) == 3:
+                lines.append(f"{entry[0]} {entry[2]}: {entry[1]}")
+            else:
+                lines.append(f"{entry[0]}: {entry[1]}")
+        text = "\n".join(lines)
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(dlg, _msg("Fehler speichern", "Save errors"), "errors.txt", "Text (*.txt)")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    save_btn.clicked.connect(save_errors)
+    btn_layout.addWidget(save_btn)
+    close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+    close_btn.setToolTip(_msg("Schließt die Fehlerübersicht.", "Close the error summary."))
+    close_btn.clicked.connect(dlg.accept)
+    btn_layout.addWidget(close_btn)
+    layout.addLayout(btn_layout)
+    dlg.setLayout(layout)
+    dlg.exec()
+    _batch_errors.clear()
+
 def _update_progress_status(tagger=None):
     global _last_status_update
     import time as _time
@@ -980,6 +1147,9 @@ def _update_progress_status(tagger=None):
         msg = f"AI Music Identifier: {_finished_files}/{_total_files} Dateien verarbeitet ({_success_files} erfolgreich, {_error_files} Fehler/Timeouts)"
         if tagger and hasattr(tagger, 'window'):
             tagger.window.set_statusbar_message(msg)
+            # Batch-Fehlerübersicht am Ende anzeigen
+            if _finished_files == _total_files and _total_files > 1 and _batch_errors:
+                _show_batch_error_dialog(tagger.window)
         else:
             log.info(msg)
         _last_status_update = now
@@ -1120,11 +1290,17 @@ def file_post_load_processor(file):
         # Starte KI-Worker-Kette
         start_genre_worker()
     def on_worker_error(msg, file_obj):
-        global _finished_files, _error_files, _error_timestamps
+        global _finished_files, _error_files, _error_timestamps, _batch_errors
         _finished_files += 1
         _error_files += 1
         import time as _time
         _error_timestamps.append(_time.time())
+        filename = getattr(file_obj, 'filename', 'unbekannt')
+        # Emoji aus Metadaten, falls vorhanden
+        emoji = ""
+        if hasattr(file_obj, 'metadata') and file_obj.metadata and "mood_emoji_ai" in file_obj.metadata:
+            emoji = file_obj.metadata["mood_emoji_ai"]
+        _batch_errors.append((filename, str(msg), emoji))
         _update_progress_status(tagger)
         _adaptive_parallel_check()
         # Benutzerfreundliche Fehlerausgabe
@@ -1176,3 +1352,31 @@ def file_post_load_processor(file):
 
 register_file_post_load_processor(file_post_load_processor)
 OPTIONS_PAGE_CLASS = AIIDOptionsPage
+
+# Worker für MusicBrainz-Detailabfrage (Label, Tracknummer)
+class MBDetailWorker(QRunnable):
+    def __init__(self, mbid, metadata, callback):
+        super().__init__()
+        self.mbid = mbid
+        self.metadata = metadata
+        self.callback = callback  # Funktion, die das Ergebnis verarbeitet
+    def run(self):
+        try:
+            release = musicbrainzngs.get_recording_by_id(self.mbid, includes=["releases", "isrcs", "artist-credits", "tags"])
+            release_list = release["recording"].get("release-list", [])
+            label = None
+            tracknumber = None
+            if release_list:
+                rel = release_list[0]
+                # Label
+                if "label-info-list" in rel and rel["label-info-list"]:
+                    label = rel["label-info-list"][0].get("label", {}).get("name")
+                # Tracknummer
+                if "medium-list" in rel and rel["medium-list"]:
+                    tracks = rel["medium-list"][0].get("track-list", [])
+                    if tracks:
+                        tracknumber = tracks[0].get("number")
+            self.callback(label, tracknumber, self.metadata)
+        except musicbrainzngs.MusicBrainzError as e:
+            self.callback(None, None, self.metadata)
+
