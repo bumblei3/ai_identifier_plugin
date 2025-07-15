@@ -1,78 +1,95 @@
-# AI Music Identifier (Picard Plugin)
+# AI Music Identifier (Picard-Plugin)
 
-**AI Music Identifier** ist ein Plugin für [MusicBrainz Picard](https://picard.musicbrainz.org/), das Musikdateien automatisch per AcoustID-Fingerprinting identifiziert und mit umfangreichen Metadaten aus MusicBrainz und KI-gestützten Vorschlägen anreichert.
-
-## Features
-
-- Automatische Identifikation von Musikdateien per AcoustID
-- Ergänzt Metadaten wie Titel, Künstler, Album, Genre (mehrere), ISRC, Label, Tracknummer, Komponist, Jahr, Cover-Art-URL u.v.m.
-- **KI-Genre-Vorschlag:** Erkennt fehlende Genres per lokalem Sprachmodell (Ollama, z.B. mistral, llama2, phi, gemma)
-- **KI-Stimmungsvorschlag:** Erkennt die Stimmung („mood“) eines Songs per KI
-- Vorschau-Dialog für KI-Vorschläge (Genre/Stimmung kann übernommen oder abgelehnt werden)
-- Auswahl zwischen mehreren Treffern (mit Cover und Jahr)
-- Option für vollautomatische Verarbeitung (Batch-Modus)
-- Caching der Metadaten (auch zwischen Sitzungen, inkl. KI-Antworten)
-- Einstellungsseite direkt im Picard-Optionendialog (API-Key, Batch-Modus, KI-Optionen, Cache leeren)
-- Mehrsprachig (Deutsch/Englisch, automatische Umschaltung)
-
-## Installation
-
-1. Lade die Datei `ai_identifier.py` herunter und kopiere sie in dein Picard-Plugin-Verzeichnis:
-   - Unter Linux: `~/.config/MusicBrainz/Picard/plugins/`
-   - Unter Windows: `%APPDATA%\MusicBrainz\Picard\plugins\`
-2. Starte Picard neu.
-3. Aktiviere das Plugin unter „Optionen > Plugins“.
-
-## Einrichtung
-
-1. **AcoustID API-Key:**  
-   - Erstelle einen kostenlosen API-Key auf [acoustid.org/api-key](https://acoustid.org/api-key).
-   - Trage den Key in den Plugin-Einstellungen unter „Optionen > Plugins > AI Music Identifier“ ein.
-
-2. **KI-Optionen:**  
-   - **KI-Genre-Vorschlag aktivieren:** Lässt fehlende Genres per KI bestimmen.
-   - **KI-Stimmungsvorschlag aktivieren:** Lässt die Stimmung per KI bestimmen.
-   - **Ollama-Modell:** Wähle das gewünschte Sprachmodell (z.B. mistral, llama2, phi, gemma).
-   - **Ollama-Server-URL:** Standard: `http://localhost:11434` (anpassbar für Remote-Server).
-   - **KI-Timeout:** Zeitlimit für KI-Anfragen (z.B. 60 Sekunden).
-   - **Cache leeren:** Löscht den gespeicherten Metadaten- und KI-Cache.
-
-3. **Ollama installieren (für KI-Funktionen):**
-   - [Ollama installieren](https://github.com/ollama/ollama) (einfacher Einzeiler für Linux/Mac/Windows)
-   - Beispiel:
-     ```bash
-     curl -fsSL https://ollama.com/install.sh | sh
-     ollama pull mistral
-     ```
-   - Ollama muss laufen, bevor Picard gestartet wird.
-
-## Nutzung
-
-- Ziehe Musikdateien in Picard und lasse sie vom Plugin identifizieren.
-- Bei mehreren Treffern kannst du im Dialog den passenden auswählen (inkl. Cover und Jahr).
-- Fehlt ein Genre oder eine Stimmung, schlägt die KI (nach Bestätigung) einen Wert vor.
-- Die Metadaten werden automatisch ergänzt und können wie gewohnt gespeichert werden.
-
-## Voraussetzungen
-
-- MusicBrainz Picard 3.x (getestet mit 3.0.0+)
-- Python 3.12+
-- PyQt6
-- Die Python-Module: `musicbrainzngs`, `pyacoustid`, `hashlib`, `json`, `requests`
-- Für KI-Funktionen: [Ollama](https://github.com/ollama/ollama) (lokal oder remote)
-
-## Hinweise
-
-- Das Plugin funktioniert am besten mit vollständigen und gut erkennbaren Audiodateien.
-- Für das Fingerprinting wird das Tool `fpcalc` benötigt (wird meist mit Picard installiert).
-- Bei Problemen prüfe das Picard-Log (`--debug` starten).
-- Die KI-Funktionen laufen komplett lokal (keine Cloud, keine Datenweitergabe).
-
-## Lizenz
-
-MIT License
+**AI Music Identifier** ist ein Plugin für [MusicBrainz Picard](https://picard.musicbrainz.org/), das Musikdateien per AcoustID automatisch identifiziert und Metadaten (inkl. Genre, ISRC, Label, Tracknummer, Jahr, Cover, Komponist, u.v.m.) ergänzt. Zusätzlich nutzt es eine lokale KI (Ollama), um Genre- und Stimmungs-Vorschläge zu generieren. Das Plugin ist robust, performant und bietet viele Komfort- und Profi-Optionen.
 
 ---
 
-**Fragen, Feedback oder Verbesserungen?**  
-Erstelle ein Issue oder einen Pull Request auf GitHub! 
+## Features
+
+- **Automatische Identifikation** von Musikdateien per AcoustID (Fingerprinting)
+- **Metadaten-Ergänzung**: Genre, ISRC, Label, Tracknummer, Jahr, Cover-URL, Komponist, u.v.m.
+- **KI-gestützte Genre- und Mood-Erkennung** (lokal, via Ollama)
+- **Mehrsprachigkeit**: Alle Nutzertexte und Statusmeldungen auf Deutsch & Englisch
+- **Cache** für KI-Ergebnisse (Ablaufzeit einstellbar, Cache kann geleert/deaktiviert werden)
+- **Threading**: Alle zeitintensiven Aufgaben laufen im Hintergrund, Picard bleibt immer reaktionsfähig
+- **Optionale Bestätigung** von KI-Vorschlägen (Dialog)
+- **Automatische Auswahl** des ersten AcoustID-Treffers (Batch-Modus)
+- **Ausführliches Logging** (inkl. Debug-Option)
+- **Fehlerrobust**: Umfangreiche Fehlerbehandlung und Statusmeldungen
+
+---
+
+## Installation
+
+1. **Voraussetzungen:**
+   - MusicBrainz Picard 3.x
+   - Python 3.12
+   - [Ollama](https://ollama.com/) lokal installiert und laufend (für KI-Funktionen)
+   - AcoustID-API-Key (kostenlos auf https://acoustid.org/)
+
+2. **Plugin-Installation:**
+   - Lege die Datei `ai_identifier.py` im Picard-Plugin-Ordner ab:
+     - Linux: `~/.config/MusicBrainz/Picard/plugins/`
+     - Windows: `%APPDATA%\MusicBrainz\Picard\plugins\`
+   - Starte Picard neu und aktiviere das Plugin in den Einstellungen.
+
+---
+
+## Konfiguration
+
+Im Picard-Optionsdialog findest du unter „Plugins → AI Music Identifier“ folgende Optionen:
+
+- **AcoustID API-Key:** Dein persönlicher AcoustID-Schlüssel
+- **Ersten Treffer automatisch wählen:** Aktiviert den Batch-Modus (keine manuelle Auswahl)
+- **KI-Genre-Vorschlag aktivieren:** Nutzt die KI für Genre-Erkennung
+- **KI-Stimmungsvorschlag aktivieren:** Nutzt die KI für Mood-Erkennung
+- **KI-Cache verwenden:** Speichert KI-Ergebnisse für schnellere Verarbeitung
+- **Cache-Ablaufzeit (Tage):** Wie lange KI-Ergebnisse gespeichert werden
+- **KI-Vorschläge immer bestätigen lassen:** Zeigt immer einen Dialog zur Bestätigung
+- **Ollama-Modell:** Wähle das gewünschte KI-Modell (z.B. mistral, llama2, phi, gemma)
+- **Ollama-Server-URL:** Adresse deines lokalen Ollama-Servers (Standard: http://localhost:11434)
+- **KI-Timeout (Sekunden):** Zeitlimit für KI-Anfragen
+- **Ausführliches Debug-Logging aktivieren:** Schaltet detaillierte Log-Ausgaben ein
+- **Cache leeren:** Löscht alle gespeicherten KI-Ergebnisse
+
+---
+
+## Hinweise zu KI & AcoustID
+
+- **KI-Funktionen** benötigen einen laufenden Ollama-Server und ein geladenes Modell.
+- **AcoustID** benötigt einen gültigen API-Key und eine Internetverbindung.
+- **Nicht alle Dateien** können erkannt werden (z.B. seltene, neue oder stark bearbeitete Tracks).
+- **KI-Genre/Mood** werden als zusätzliche Felder (`genre_ai`, `mood_ai`) gespeichert.
+
+---
+
+## Fehlerbehandlung & Logging
+
+- Alle Fehler (z.B. Netzwerk, Timeout, keine Übereinstimmung) werden klar in der Statusleiste und im Log angezeigt.
+- Bei KI-Timeouts oder Serverproblemen gibt es Tipps zur Behebung.
+- Mit aktiviertem Debug-Logging werden alle Abläufe, Cache-Treffer und Thread-Status ausführlich geloggt.
+
+---
+
+## Bekannte Probleme & Tipps
+
+- **Keine Übereinstimmung gefunden:**
+  - Die Datei ist nicht in der AcoustID-Datenbank oder zu stark verändert.
+  - Prüfe die Datei, verwende ggf. eine längere/bessere Version oder trage sie selbst bei AcoustID ein.
+- **KI-Timeouts:**
+  - Erhöhe das Timeout in den Optionen oder prüfe, ob Ollama korrekt läuft.
+- **Abstürze durch QThread:**
+  - In der aktuellen Version werden alle Worker korrekt verwaltet, sodass keine Abstürze mehr auftreten sollten.
+- **Performance:**
+  - Die Anzahl gleichzeitiger KI-Anfragen ist limitiert, um Ollama und das System zu schonen.
+
+---
+
+## Support & Weiterentwicklung
+
+- Für Fragen, Fehlerberichte oder Feature-Wünsche: Bitte im GitHub-Repository ein Issue eröffnen oder direkt Kontakt aufnehmen.
+- Die Entwicklung ist iterativ und nutzerzentriert – Feedback ist willkommen!
+
+---
+
+Viel Spaß beim automatisierten Tagging mit KI-Unterstützung! 🎶🤖 
