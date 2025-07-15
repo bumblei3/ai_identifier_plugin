@@ -16,6 +16,7 @@ import hashlib
 import os
 import json
 from picard.ui.options import OptionsPage
+import requests
 
 _aiid_cache = {}
 
@@ -57,6 +58,56 @@ def _get_api_key():
     # Hole den AcoustID API-Key aus den Picard-Einstellungen
     return config.setting.get("aiid_acoustid_api_key", "")
 
+def call_ollama(prompt, model="mistral"):
+    url = config.setting.get("aiid_ollama_url", "http://localhost:11434") + "/api/generate"
+    data = {"model": model, "prompt": prompt, "stream": False}
+    timeout = config.setting.get("aiid_ollama_timeout", 60)
+    try:
+        response = requests.post(url, json=data, timeout=timeout)
+        response.raise_for_status()
+        return response.json()["response"].strip()
+    except Exception as e:
+        return f"Fehler bei Ollama-Anfrage: {e}"
+
+def get_genre_suggestion(title, artist):
+    prompt = (
+        f"Welches Musikgenre hat der Song '{title}' von '{artist}'? "
+        "Antworte nur mit dem Genre, ohne weitere Erklärungen."
+    )
+    model = config.setting.get("aiid_ollama_model", "mistral")
+    # KI-Cache-Schlüssel
+    cache_key = f"ki_genre::{model}::{title}::{artist}"
+    if cache_key in _aiid_cache:
+        return _aiid_cache[cache_key]
+    genre = call_ollama(prompt, model)
+    if genre and "Fehler" not in genre:
+        _aiid_cache[cache_key] = genre
+        _save_cache()
+    return genre
+
+def show_genre_suggestion_dialog(parent, genre):
+    msg_box = QtWidgets.QMessageBox(parent)
+    msg_box.setIcon(QtWidgets.QMessageBox.Icon.Question)
+    msg_box.setWindowTitle(_msg("KI-Genre-Vorschlag", "AI Genre Suggestion"))
+    msg_box.setText(_msg(f"Die KI schlägt folgendes Genre vor:\n<b>{genre}</b>\nÜbernehmen?", f"The AI suggests the following genre:\n<b>{genre}</b>\nAccept?"))
+    msg_box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+    return msg_box.exec() == QtWidgets.QMessageBox.StandardButton.Yes
+
+def get_mood_suggestion(title, artist):
+    prompt = (
+        f"Welche Stimmung hat der Song '{title}' von '{artist}'? "
+        "Antworte nur mit einem Wort (z.B. fröhlich, melancholisch, energetisch)."
+    )
+    model = config.setting.get("aiid_ollama_model", "mistral")
+    cache_key = f"ki_mood::{model}::{title}::{artist}"
+    if cache_key in _aiid_cache:
+        return _aiid_cache[cache_key]
+    mood = call_ollama(prompt, model)
+    if mood and "Fehler" not in mood:
+        _aiid_cache[cache_key] = mood
+        _save_cache()
+    return mood
+
 class AIIDOptionsPage(OptionsPage):
     NAME = "ai_identifier"
     TITLE = "AI Music Identifier"
@@ -76,6 +127,32 @@ class AIIDOptionsPage(OptionsPage):
         self.auto_select_checkbox = QtWidgets.QCheckBox(_msg("Ersten Treffer automatisch wählen (Batch-Modus)", "Automatically select first match (batch mode)"))
         layout.addWidget(self.auto_select_checkbox)
 
+        # KI-Genre-Vorschlag aktivieren
+        self.ki_genre_checkbox = QtWidgets.QCheckBox(_msg("KI-Genre-Vorschlag aktivieren", "Enable AI genre suggestion"))
+        layout.addWidget(self.ki_genre_checkbox)
+
+        # Ollama-Modell für KI-Vorschläge
+        self.model_label = QtWidgets.QLabel(_msg("Ollama-Modell für KI-Vorschläge:", "Ollama model for AI suggestions:"))
+        self.model_combo = QtWidgets.QComboBox()
+        self.model_combo.addItems(["mistral", "llama2", "phi", "gemma"])
+        layout.addWidget(self.model_label)
+        layout.addWidget(self.model_combo)
+
+        # Ollama-Server-URL
+        self.url_label = QtWidgets.QLabel(_msg("Ollama-Server-URL:", "Ollama server URL:"))
+        self.url_edit = QtWidgets.QLineEdit()
+        layout.addWidget(self.url_label)
+        layout.addWidget(self.url_edit)
+        # Timeout
+        self.timeout_label = QtWidgets.QLabel(_msg("KI-Timeout (Sekunden):", "AI timeout (seconds):"))
+        self.timeout_spin = QtWidgets.QSpinBox()
+        self.timeout_spin.setRange(5, 300)
+        layout.addWidget(self.timeout_label)
+        layout.addWidget(self.timeout_spin)
+        # KI-Stimmung aktivieren
+        self.ki_mood_checkbox = QtWidgets.QCheckBox(_msg("KI-Stimmungsvorschlag aktivieren", "Enable AI mood suggestion"))
+        layout.addWidget(self.ki_mood_checkbox)
+
         # Cache leeren
         self.clear_cache_btn = QtWidgets.QPushButton(_msg("Cache leeren", "Clear cache"))
         self.clear_cache_btn.clicked.connect(self.clear_cache)
@@ -87,10 +164,20 @@ class AIIDOptionsPage(OptionsPage):
     def load(self):
         self.api_key_edit.setText(config.setting.get("aiid_acoustid_api_key", ""))
         self.auto_select_checkbox.setChecked(config.setting.get("aiid_auto_select_first", False))
+        self.ki_genre_checkbox.setChecked(config.setting.get("aiid_enable_ki_genre", True))
+        self.model_combo.setCurrentText(config.setting.get("aiid_ollama_model", "mistral"))
+        self.url_edit.setText(config.setting.get("aiid_ollama_url", "http://localhost:11434"))
+        self.timeout_spin.setValue(config.setting.get("aiid_ollama_timeout", 60))
+        self.ki_mood_checkbox.setChecked(config.setting.get("aiid_enable_ki_mood", False))
 
     def save(self):
         config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
         config.setting["aiid_auto_select_first"] = self.auto_select_checkbox.isChecked()
+        config.setting["aiid_enable_ki_genre"] = self.ki_genre_checkbox.isChecked()
+        config.setting["aiid_ollama_model"] = self.model_combo.currentText()
+        config.setting["aiid_ollama_url"] = self.url_edit.text().strip()
+        config.setting["aiid_ollama_timeout"] = self.timeout_spin.value()
+        config.setting["aiid_enable_ki_mood"] = self.ki_mood_checkbox.isChecked()
 
     def clear_cache(self):
         global _aiid_cache
@@ -278,6 +365,36 @@ def file_post_load_processor(tagger, metadata, file):
 
             # Zusätzliche Felder ergänzen
             fetch_additional_metadata(result, metadata)
+
+            # KI-Genre-Vorschlag per Ollama, falls kein Genre gefunden wurde und Option aktiviert ist
+            if config.setting.get("aiid_enable_ki_genre", True) and not metadata.get("genre"):
+                genre = get_genre_suggestion(metadata.get("title", ""), metadata.get("artist", ""))
+                if genre and "Fehler" not in genre:
+                    # Vorschau-Dialog anzeigen
+                    if show_genre_suggestion_dialog(tagger.window, genre):
+                        metadata["genre"] = genre
+                        log.info("AI Music Identifier: Genre per Ollama übernommen: %s", genre)
+                    else:
+                        log.info("AI Music Identifier: KI-Genre-Vorschlag abgelehnt: %s", genre)
+                elif genre and "Fehler" in genre:
+                    msg = _msg(f"KI-Genre-Vorschlag fehlgeschlagen: {genre}", f"AI genre suggestion failed: {genre}")
+                    tagger.window.set_statusbar_message(msg)
+                    log.warning("AI Music Identifier: %s", genre)
+
+            # KI-Stimmungsvorschlag per Ollama, falls Option aktiviert
+            if config.setting.get("aiid_enable_ki_mood", False):
+                mood = get_mood_suggestion(metadata.get("title", ""), metadata.get("artist", ""))
+                if mood and "Fehler" not in mood:
+                    # Vorschau-Dialog für Stimmung
+                    if show_genre_suggestion_dialog(tagger.window, mood):
+                        metadata["mood"] = mood
+                        log.info("AI Music Identifier: Stimmung per Ollama übernommen: %s", mood)
+                    else:
+                        log.info("AI Music Identifier: KI-Stimmungsvorschlag abgelehnt: %s", mood)
+                elif mood and "Fehler" in mood:
+                    msg = _msg(f"KI-Stimmungsvorschlag fehlgeschlagen: {mood}", f"AI mood suggestion failed: {mood}")
+                    tagger.window.set_statusbar_message(msg)
+                    log.warning("AI Music Identifier: %s", mood)
 
             # Cache speichern
             if file_hash:
