@@ -8,10 +8,44 @@ from picard import config, log
 from picard.metadata import Metadata
 import musicbrainzngs
 import pyacoustid
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets, QtCore
+from PyQt6.QtGui import QPixmap, QIcon
+from urllib.request import urlopen
+from io import BytesIO
 import hashlib
+import os
+import json
+from picard.ui.options import OptionsPage
 
 _aiid_cache = {}
+
+# Speicherort für den Cache (z.B. im Picard-Config-Verzeichnis)
+_CACHE_PATH = os.path.expanduser("~/.config/MusicBrainz/Picard/aiid_cache.json")
+
+def _load_cache():
+    global _aiid_cache
+    try:
+        if os.path.exists(_CACHE_PATH):
+            with open(_CACHE_PATH, "r", encoding="utf-8") as f:
+                _aiid_cache.update(json.load(f))
+    except Exception as e:
+        log.warning("AI Music Identifier: Konnte Cache nicht laden: %s", e)
+
+def _save_cache():
+    try:
+        with open(_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_aiid_cache, f)
+    except Exception as e:
+        log.warning("AI Music Identifier: Konnte Cache nicht speichern: %s", e)
+
+# Cache beim Laden des Plugins initialisieren
+_load_cache()
+
+# Hole die Einstellung für automatische Auswahl
+_DEF_AUTO_SELECT = False
+
+def _get_auto_select():
+    return config.setting.get("aiid_auto_select_first", _DEF_AUTO_SELECT)
 
 def _msg(de, en):
     # Einfache Sprachumschaltung
@@ -22,6 +56,49 @@ def _msg(de, en):
 def _get_api_key():
     # Hole den AcoustID API-Key aus den Picard-Einstellungen
     return config.setting.get("aiid_acoustid_api_key", "")
+
+class AIIDOptionsPage(OptionsPage):
+    NAME = "ai_identifier"
+    TITLE = "AI Music Identifier"
+    PARENT = "plugins"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("AIIDOptionsPage")
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # API-Key
+        self.api_key_edit = QtWidgets.QLineEdit()
+        layout.addWidget(QtWidgets.QLabel("AcoustID API-Key:"))
+        layout.addWidget(self.api_key_edit)
+
+        # Automatische Auswahl
+        self.auto_select_checkbox = QtWidgets.QCheckBox(_msg("Ersten Treffer automatisch wählen (Batch-Modus)", "Automatically select first match (batch mode)"))
+        layout.addWidget(self.auto_select_checkbox)
+
+        # Cache leeren
+        self.clear_cache_btn = QtWidgets.QPushButton(_msg("Cache leeren", "Clear cache"))
+        self.clear_cache_btn.clicked.connect(self.clear_cache)
+        layout.addWidget(self.clear_cache_btn)
+
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+    def load(self):
+        self.api_key_edit.setText(config.setting.get("aiid_acoustid_api_key", ""))
+        self.auto_select_checkbox.setChecked(config.setting.get("aiid_auto_select_first", False))
+
+    def save(self):
+        config.setting["aiid_acoustid_api_key"] = self.api_key_edit.text().strip()
+        config.setting["aiid_auto_select_first"] = self.auto_select_checkbox.isChecked()
+
+    def clear_cache(self):
+        global _aiid_cache
+        _aiid_cache.clear()
+        _save_cache()
+        QtWidgets.QMessageBox.information(self, "Info", _msg("Cache wurde geleert.", "Cache cleared."))
+
+OPTIONS_PAGE_CLASS = AIIDOptionsPage
 
 def select_result_dialog(results, parent=None):
     dialog = QtWidgets.QDialog(parent)
@@ -34,15 +111,43 @@ def select_result_dialog(results, parent=None):
         title = result.get("title", "–")
         artists = ", ".join([a.get("name", "") for a in result.get("artists", [])]) if "artists" in result else ""
         album = result.get("releasegroups", [{}])[0].get("title", "") if "releasegroups" in result and result["releasegroups"] else ""
+        # Jahr extrahieren
+        year = ""
+        if "releasegroups" in result and result["releasegroups"]:
+            first_release = result["releasegroups"][0]
+            year = first_release.get("first-release-date", "")[:4] if first_release.get("first-release-date") else ""
+        # Cover-URL extrahieren (sofern vorhanden)
+        cover_url = None
+        if "releasegroups" in result and result["releasegroups"]:
+            first_release = result["releasegroups"][0]
+            # MusicBrainz Cover Art Archive URL
+            mbid = first_release.get("id")
+            if mbid:
+                cover_url = f"https://coverartarchive.org/release-group/{mbid}/front-250"
+        # Text für die Zeile
         item_text = f"{title} – {artists} [{album}]"
-        list_widget.addItem(item_text)
+        if year:
+            item_text += f" ({year})"
+        item = QtWidgets.QListWidgetItem(item_text)
+        # Cover als Icon laden (optional)
+        if cover_url:
+            try:
+                response = urlopen(cover_url)
+                data = response.read()
+                pixmap = QPixmap()
+                pixmap.loadFromData(data)
+                icon = QIcon(pixmap)
+                item.setIcon(icon)
+            except Exception:
+                pass  # Wenn Cover nicht geladen werden kann, ignoriere es
+        list_widget.addItem(item)
     layout.addWidget(list_widget)
-    button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+    button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
     layout.addWidget(button_box)
     button_box.accepted.connect(dialog.accept)
     button_box.rejected.connect(dialog.reject)
     dialog.setLayout(layout)
-    if dialog.exec_() == QtWidgets.QDialog.Accepted and list_widget.currentRow() >= 0:
+    if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted and list_widget.currentRow() >= 0:
         return list_widget.currentRow()
     return None
 
@@ -50,10 +155,41 @@ def fetch_additional_metadata(result, metadata):
     # Genre
     if "tags" in result and not metadata.get("genre"):
         tags = result["tags"]
-        if isinstance(tags, list) and tags:
-            metadata["genre"] = tags[0]
+        genres = []
+        if isinstance(tags, list):
+            # Liste von Tags (z.B. [{'name': 'Rock'}, {'name': 'Pop'}] oder ['Rock', 'Pop'])
+            for tag in tags:
+                if isinstance(tag, dict) and "name" in tag:
+                    genres.append(tag["name"])
+                elif isinstance(tag, str):
+                    genres.append(tag)
         elif isinstance(tags, dict) and "name" in tags:
-            metadata["genre"] = tags["name"]
+            genres.append(tags["name"])
+        if genres:
+            metadata["genre"] = "; ".join(genres)
+    # Komponist(en)
+    if "recordings" in result and result["recordings"]:
+        rec = result["recordings"][0]
+        if "artist-credit" in rec:
+            composers = []
+            for ac in rec["artist-credit"]:
+                if isinstance(ac, dict) and ac.get("artist", {}).get("type") == "Composer":
+                    composers.append(ac["artist"].get("name"))
+            if composers:
+                metadata["composer"] = "; ".join(composers)
+    # Jahr (first-release-date)
+    if "releasegroups" in result and result["releasegroups"]:
+        first_release = result["releasegroups"][0]
+        year = first_release.get("first-release-date", "")[:4] if first_release.get("first-release-date") else ""
+        if year:
+            metadata["date"] = year
+    # Cover-Art-URL
+    if "releasegroups" in result and result["releasegroups"]:
+        first_release = result["releasegroups"][0]
+        mbid = first_release.get("id")
+        if mbid:
+            cover_url = f"https://coverartarchive.org/release-group/{mbid}/front"
+            metadata["coverart_url"] = cover_url
     # ISRC
     if "recordings" in result and result["recordings"]:
         rec = result["recordings"][0]
@@ -120,7 +256,10 @@ def file_post_load_processor(tagger, metadata, file):
             acoustid_results = results['results']
             # Wenn mehr als ein Treffer, Auswahl anzeigen
             if len(acoustid_results) > 1:
-                idx = select_result_dialog(acoustid_results, tagger.window)
+                if _get_auto_select():
+                    idx = 0
+                else:
+                    idx = select_result_dialog(acoustid_results, tagger.window)
                 if idx is None:
                     msg = _msg("Keine Auswahl getroffen für %s", "No selection made for %s") % file.filename
                     tagger.window.set_statusbar_message(msg)
@@ -143,6 +282,7 @@ def file_post_load_processor(tagger, metadata, file):
             # Cache speichern
             if file_hash:
                 _aiid_cache[file_hash] = dict(metadata)
+                _save_cache()
 
             msg = _msg("Metadaten aktualisiert für %s", "Updated metadata for %s") % file.filename
             tagger.window.set_statusbar_message(msg)
