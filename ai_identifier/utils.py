@@ -9,7 +9,7 @@ from .constants import VALID_GENRES, VALID_MOODS
 from typing import Any, Optional
 from . import logging
 
-def _msg(de: str, en: Optional[str] = None) -> str:
+def msg(de: str, en: Optional[str] = None) -> str:
     """
     Gibt die deutsche oder englische Version einer Nachricht zurück (je nach UI-Sprache).
     :param de: Deutsche Nachricht
@@ -38,15 +38,36 @@ def validate_ki_value(field, value):
         return (False, value, matches[0])
     return (False, value, None)
 
-def show_error(tagger: Any, message: str) -> None:
+def show_error(tagger: Any, message: Optional[str], message_en: Optional[str] = None) -> None:
     """
-    Zeigt eine Fehlermeldung im Log und ggf. in der UI an.
+    Zeigt eine Fehlermeldung im Log und ggf. in der UI an. Unterstützt Mehrsprachigkeit.
     :param tagger: (optional) Picard-Tagger-Objekt
-    :param message: Fehlermeldung
+    :param message: Fehlermeldung (deutsch oder allgemein)
+    :param message_en: (optional) Englische Fehlermeldung
     """
-    std_logging.getLogger().error(f"AI Music Identifier: {message}")
+    message = message or "Unbekannter Fehler"
+    msg_text: str = str(msg(message, message_en) or "Unbekannter Fehler")
+    title: str = str(msg("Fehler", "Error") or "Fehler")
+    if not msg_text:
+        msg_text = "Unbekannter Fehler"
+    if not title:
+        title = "Fehler"
+    title_str: str = title if title is not None else "Fehler"
+    msg_str: str = msg_text if msg_text is not None else "Unbekannter Fehler"
+    std_logging.getLogger().error(f"AI Music Identifier: {msg_str}")
     if tagger and hasattr(tagger, 'window'):
-        tagger.window.set_statusbar_message(message)
-        QtWidgets.QMessageBox.critical(tagger.window, "Fehler", message)
+        tagger.window.set_statusbar_message(msg_str)
+        QtWidgets.QMessageBox.critical(tagger.window, title_str, msg_str)
+
+def is_debug_logging() -> bool:
+    """
+    Gibt True zurück, wenn Debug-Logging in der Picard-Konfiguration aktiviert ist.
+    """
+    try:
+        from picard import config
+        return bool(config.setting.get("aiid_debug_logging", False))
+    except Exception:
+        return False
 
 # Hier können weitere kleine Hilfsfunktionen ergänzt werden
+__all__ = ["msg", "show_error", "is_debug_logging", "validate_ki_value"]

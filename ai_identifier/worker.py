@@ -3,7 +3,8 @@
 
 from PyQt6.QtCore import QRunnable, QObject, pyqtSignal
 from collections import deque
-from .ki import call_ollama
+import asyncio
+from .providers.ollama import call_ollama as async_call_ollama
 from .utils import show_error
 import threading
 from picard import log
@@ -44,9 +45,9 @@ class AIKIRunnable(QRunnable):
             from picard import log
             log.info(f"AI Music Identifier: KI-Worker gestartet (Feld: {self.field}, Modell: {self.model})")
             if self.field == "genre":
-                result = call_ollama(self.prompt, self.model, self.tagger)
+                result = asyncio.run(async_call_ollama(self.prompt, self.model, self.tagger))
             elif self.field == "mood":
-                result = call_ollama(self.prompt, self.model, self.tagger)
+                result = asyncio.run(async_call_ollama(self.prompt, self.model, self.tagger))
             else:
                 result = None
             if result and "Fehler" not in result:
