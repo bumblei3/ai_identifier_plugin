@@ -1,95 +1,220 @@
 # AI Music Identifier (Picard-Plugin)
 
-**AI Music Identifier** ist ein Plugin für [MusicBrainz Picard](https://picard.musicbrainz.org/), das Musikdateien per AcoustID automatisch identifiziert und Metadaten (inkl. Genre, ISRC, Label, Tracknummer, Jahr, Cover, Komponist, u.v.m.) ergänzt. Zusätzlich nutzt es eine lokale KI (Ollama), um Genre- und Stimmungs-Vorschläge zu generieren. Das Plugin ist robust, performant und bietet viele Komfort- und Profi-Optionen.
+**AI Music Identifier** ist ein fortschrittliches Plugin für [MusicBrainz Picard](https://picard.musicbrainz.org/), das Musikdateien per AcoustID automatisch identifiziert und umfangreiche Metadaten ergänzt. Das Plugin nutzt moderne KI-Technologien für intelligente Musikanalyse, personalisierte Vorschläge und automatisierte Workflows.
 
 ---
 
-## Features
+## 🚀 Features
 
+### **Kern-Funktionen**
 - **Automatische Identifikation** von Musikdateien per AcoustID (Fingerprinting)
-- **Metadaten-Ergänzung**: Genre, ISRC, Label, Tracknummer, Jahr, Cover-URL, Komponist, u.v.m.
-- **KI-gestützte Genre- und Mood-Erkennung** (lokal, via Ollama)
-- **Mehrsprachigkeit**: Alle Nutzertexte und Statusmeldungen auf Deutsch & Englisch
-- **Cache** für KI-Ergebnisse (Ablaufzeit einstellbar, Cache kann geleert/deaktiviert werden)
-- **Threading**: Alle zeitintensiven Aufgaben laufen im Hintergrund, Picard bleibt immer reaktionsfähig
-- **Optionale Bestätigung** von KI-Vorschlägen (Dialog)
-- **Automatische Auswahl** des ersten AcoustID-Treffers (Batch-Modus)
-- **Ausführliches Logging** (inkl. Debug-Option)
-- **Fehlerrobust**: Umfangreiche Fehlerbehandlung und Statusmeldungen
+- **Umfassende Metadaten-Ergänzung**: Genre, ISRC, Label, Tracknummer, Jahr, Cover, Komponist, u.v.m.
+- **Mehrsprachigkeit**: Vollständige Lokalisierung (Deutsch, Englisch, Französisch, Spanisch)
+
+### **KI-gestützte Analyse**
+- **Multi-Provider-KI-System**: OpenAI, HuggingFace, Ollama, Google, DeepL, AWS, Azure
+- **Erweiterte KI-Felder**: Genre, Mood, Epoche, Stil, Instrumente, Emojis, Sprache
+- **Audioanalyse**: Automatische BPM- und Tonart-Erkennung mit librosa
+- **Lyrics-Generierung**: KI-basierte Lyrics-Erstellung mit API-Fallback
+- **Cover-Art-Analyse**: KI-gestützte Beschreibung und Analyse von Album-Covern
+- **Mood-Timeline**: Dynamische Stimmungsanalyse über die Songdauer mit Visualisierung
+- **Genre-Hierarchie**: Intelligente Subgenre-Erkennung und hierarchische Strukturierung
+
+### **Intelligente Workflows**
+- **Smart Tagging**: KI-basierte Vorschläge basierend auf ähnlichen Songs
+- **Batch-Intelligenz**: Analyse ganzer Batches mit Gruppierung ähnlicher Songs
+- **Konfliktlösung**: Automatische Erkennung und KI-gestützte Lösung von Metadaten-Konflikten
+- **Workflow-Engine**: Regelbasierte Automatisierung mit Bedingungen und Aktionen
+- **Personalisierung**: Lernende Systeme, die sich an Nutzerpräferenzen anpassen
+
+### **Erweiterte Funktionen**
+- **Dubletten-Erkennung**: Intelligente Erkennung ähnlicher oder identischer Tracks
+- **Cover-Erkennung**: Automatische Identifikation von Cover-Versionen
+- **Filter- und Suchfunktionen**: Erweiterte Batch-Verarbeitung mit Filtern
+- **Playlist-Vorschläge**: KI-generierte Playlist-Empfehlungen
+- **Übersetzungsfunktionen**: Automatische Übersetzung von Metadaten
+- **Feedback-System**: Lernende KI mit Nutzer-Feedback-Loop
+
+### **Performance & Komfort**
+- **Cache-Management**: Intelligentes Caching mit Ablaufzeiten und Statistiken
+- **Threading**: Alle Aufgaben laufen im Hintergrund, Picard bleibt reaktionsfähig
+- **Batch-Verarbeitung**: Optimierte Verarbeitung großer Dateimengen
+- **Undo/Redo**: Rückgängig- und Wiederholen-Funktionen für Batch-Aktionen
+- **Scheduler**: Automatische Aufgaben und geplante Analysen
+- **Statistiken**: Detaillierte Auswertungen und Export-Funktionen
 
 ---
 
-## Installation
+## 📋 Voraussetzungen
 
-1. **Voraussetzungen:**
-   - MusicBrainz Picard 3.x
-   - Python 3.12
-   - [Ollama](https://ollama.com/) lokal installiert und laufend (für KI-Funktionen)
-   - AcoustID-API-Key (kostenlos auf https://acoustid.org/)
+### **System-Anforderungen**
+- MusicBrainz Picard 3.x
+- Python 3.12+
+- Mindestens 4GB RAM (für KI-Analysen)
+- Internetverbindung (für AcoustID und KI-APIs)
 
-2. **Plugin-Installation:**
-   - Lege die Datei `ai_identifier.py` im Picard-Plugin-Ordner ab:
-     - Linux: `~/.config/MusicBrainz/Picard/plugins/`
-     - Windows: `%APPDATA%\MusicBrainz\Picard\plugins\`
-   - Starte Picard neu und aktiviere das Plugin in den Einstellungen.
+### **KI-Provider (mindestens einer erforderlich)**
+- **Ollama** (lokal, kostenlos): [ollama.com](https://ollama.com/)
+- **OpenAI** (cloud): API-Key von [openai.com](https://openai.com/)
+- **HuggingFace** (cloud): API-Key von [huggingface.co](https://huggingface.co/)
+- **Google AI** (cloud): API-Key von Google Cloud
+- **DeepL** (Übersetzungen): API-Key von [deepl.com](https://deepl.com/)
 
----
-
-## Konfiguration
-
-Im Picard-Optionsdialog findest du unter „Plugins → AI Music Identifier“ folgende Optionen:
-
-- **AcoustID API-Key:** Dein persönlicher AcoustID-Schlüssel
-- **Ersten Treffer automatisch wählen:** Aktiviert den Batch-Modus (keine manuelle Auswahl)
-- **KI-Genre-Vorschlag aktivieren:** Nutzt die KI für Genre-Erkennung
-- **KI-Stimmungsvorschlag aktivieren:** Nutzt die KI für Mood-Erkennung
-- **KI-Cache verwenden:** Speichert KI-Ergebnisse für schnellere Verarbeitung
-- **Cache-Ablaufzeit (Tage):** Wie lange KI-Ergebnisse gespeichert werden
-- **KI-Vorschläge immer bestätigen lassen:** Zeigt immer einen Dialog zur Bestätigung
-- **Ollama-Modell:** Wähle das gewünschte KI-Modell (z.B. mistral, llama2, phi, gemma)
-- **Ollama-Server-URL:** Adresse deines lokalen Ollama-Servers (Standard: http://localhost:11434)
-- **KI-Timeout (Sekunden):** Zeitlimit für KI-Anfragen
-- **Ausführliches Debug-Logging aktivieren:** Schaltet detaillierte Log-Ausgaben ein
-- **Cache leeren:** Löscht alle gespeicherten KI-Ergebnisse
+### **Zusätzliche APIs**
+- **AcoustID-API-Key**: Kostenlos auf [acoustid.org](https://acoustid.org/)
+- **Lyrics-APIs** (optional): Genius, Musixmatch, etc.
 
 ---
 
-## Hinweise zu KI & AcoustID
+## 🔧 Installation
 
-- **KI-Funktionen** benötigen einen laufenden Ollama-Server und ein geladenes Modell.
-- **AcoustID** benötigt einen gültigen API-Key und eine Internetverbindung.
-- **Nicht alle Dateien** können erkannt werden (z.B. seltene, neue oder stark bearbeitete Tracks).
-- **KI-Genre/Mood** werden als zusätzliche Felder (`genre_ai`, `mood_ai`) gespeichert.
+### **1. Plugin-Installation**
+```bash
+# Linux/macOS
+cp ai_identifier.py ~/.config/MusicBrainz/Picard/plugins/
 
----
+# Windows
+copy ai_identifier.py "%APPDATA%\MusicBrainz\Picard\plugins\"
+```
 
-## Fehlerbehandlung & Logging
+### **2. Abhängigkeiten installieren**
+```bash
+# Für Audioanalyse (optional, aber empfohlen)
+pip install librosa soundfile
 
-- Alle Fehler (z.B. Netzwerk, Timeout, keine Übereinstimmung) werden klar in der Statusleiste und im Log angezeigt.
-- Bei KI-Timeouts oder Serverproblemen gibt es Tipps zur Behebung.
-- Mit aktiviertem Debug-Logging werden alle Abläufe, Cache-Treffer und Thread-Status ausführlich geloggt.
+# Für erweiterte KI-Funktionen
+pip install openai transformers torch
+```
 
----
-
-## Bekannte Probleme & Tipps
-
-- **Keine Übereinstimmung gefunden:**
-  - Die Datei ist nicht in der AcoustID-Datenbank oder zu stark verändert.
-  - Prüfe die Datei, verwende ggf. eine längere/bessere Version oder trage sie selbst bei AcoustID ein.
-- **KI-Timeouts:**
-  - Erhöhe das Timeout in den Optionen oder prüfe, ob Ollama korrekt läuft.
-- **Abstürze durch QThread:**
-  - In der aktuellen Version werden alle Worker korrekt verwaltet, sodass keine Abstürze mehr auftreten sollten.
-- **Performance:**
-  - Die Anzahl gleichzeitiger KI-Anfragen ist limitiert, um Ollama und das System zu schonen.
+### **3. Plugin aktivieren**
+- Picard neu starten
+- Einstellungen → Plugins → AI Music Identifier aktivieren
 
 ---
 
-## Support & Weiterentwicklung
+## ⚙️ Konfiguration
 
-- Für Fragen, Fehlerberichte oder Feature-Wünsche: Bitte im GitHub-Repository ein Issue eröffnen oder direkt Kontakt aufnehmen.
-- Die Entwicklung ist iterativ und nutzerzentriert – Feedback ist willkommen!
+### **Haupt-Einstellungen**
+- **AcoustID API-Key**: Dein persönlicher AcoustID-Schlüssel
+- **KI-Provider**: Auswahl und Konfiguration der bevorzugten KI-Services
+- **Cache-Einstellungen**: Ablaufzeiten, Größenlimits, automatisches Leeren
+- **Personalisierung**: Lernschwellenwerte, Feedback-Einstellungen
+
+### **KI-Konfiguration**
+- **Provider-Priorität**: Reihenfolge der KI-Services bei Ausfällen
+- **Modell-Auswahl**: Spezifische Modelle pro Provider
+- **Timeout-Einstellungen**: Zeitlimits für verschiedene Operationen
+- **Confidence-Schwellenwerte**: Ab wann Feedback abgefragt wird
+
+### **Workflow-Einstellungen**
+- **Automatische Workflows**: Vordefinierte Regeln aktivieren/deaktivieren
+- **Batch-Intelligenz**: Gruppierung und Konsistenzprüfung
+- **Konfliktlösung**: Automatische vs. interaktive Konfliktbehandlung
 
 ---
 
-Viel Spaß beim automatisierten Tagging mit KI-Unterstützung! 🎶🤖 
+## 🎯 Verwendung
+
+### **Grundlegende Nutzung**
+1. **Dateien laden**: Musikdateien in Picard ziehen
+2. **Automatische Analyse**: Plugin analysiert automatisch alle Dateien
+3. **Vorschläge prüfen**: KI-Vorschläge in Dialogen überprüfen
+4. **Metadaten anwenden**: Gewünschte Tags übernehmen
+
+### **Erweiterte Funktionen**
+- **Batch-Intelligenz**: Nutze den "Batch Intelligence"-Button für Gruppenanalyse
+- **Smart Tagging**: "Smart Tagging"-Button für KI-basierte Vorschläge
+- **Konfliktlösung**: "Conflict Resolution"-Button bei Widersprüchen
+- **Workflow-Manager**: Eigene Automatisierungsregeln erstellen
+
+### **Feedback geben**
+- Bei niedriger Confidence oder Ablehnung von Vorschlägen
+- Über "Feedback geben"-Button für detailliertes Feedback
+- Automatisches Lernen des Systems aus Nutzerverhalten
+
+---
+
+## 🔍 Fehlerbehandlung
+
+### **Häufige Probleme**
+- **Keine KI-Verbindung**: Provider-Status prüfen, API-Keys validieren
+- **AcoustID-Fehler**: Internetverbindung und API-Key prüfen
+- **Performance-Probleme**: Cache leeren, Thread-Anzahl anpassen
+- **Memory-Fehler**: Batch-Größe reduzieren, weniger gleichzeitige Analysen
+
+### **Debug-Modus**
+- Aktiviert ausführliches Logging für detaillierte Fehleranalyse
+- Cache-Statistiken und Performance-Metriken
+- Provider-Status und Verbindungsdiagnose
+
+---
+
+## 🚀 Erweiterte Features
+
+### **Personalisierung**
+- **Lernende Systeme**: Das Plugin passt sich an deine Präferenzen an
+- **Nutzerprofile**: Verschiedene Profile für unterschiedliche Musikrichtungen
+- **Adaptive Vorschläge**: KI berücksichtigt dein Feedback bei neuen Analysen
+
+### **Automatisierung**
+- **Workflow-Engine**: Regelbasierte Automatisierung komplexer Aufgaben
+- **Scheduler**: Geplante Analysen und Backups
+- **Batch-Intelligenz**: Intelligente Verarbeitung großer Dateimengen
+
+### **Community & Sharing**
+- **Feedback-Export**: Teilen von Verbesserungsvorschlägen
+- **Workflow-Sharing**: Austausch von Automatisierungsregeln
+- **Statistik-Export**: Detaillierte Auswertungen für Berichte
+
+---
+
+## 📊 Statistiken & Monitoring
+
+### **Performance-Metriken**
+- Cache-Trefferquoten und Ladezeiten
+- KI-Provider-Auslastung und Erfolgsraten
+- Batch-Verarbeitungszeiten und Durchsatz
+
+### **Qualitäts-Metriken**
+- Feedback-Statistiken und Lernfortschritt
+- Konfliktlösungs-Erfolgsraten
+- Automatisierungs-Effektivität
+
+---
+
+## 🔮 Roadmap
+
+### **Geplante Features**
+- **Cloud-Synchronisation**: Einstellungen und Profile in der Cloud
+- **Community-Features**: Austausch von Workflows und Feedback
+- **Erweiterte Audioanalyse**: Stimm- und Instrumentenerkennung
+- **Mobile Integration**: Companion-App für Remote-Steuerung
+
+### **KI-Verbesserungen**
+- **Lokale Modelle**: Optimierte lokale KI-Modelle
+- **Ensemble-Methoden**: Kombination mehrerer KI-Systeme
+- **Real-time Learning**: Kontinuierliche Verbesserung während der Nutzung
+
+---
+
+## 🤝 Support & Community
+
+### **Hilfe & Dokumentation**
+- **Detaillierte Dokumentation**: Alle Features und Einstellungen
+- **Video-Tutorials**: Schritt-für-Schritt-Anleitungen
+- **FAQ**: Häufige Fragen und Antworten
+
+### **Feedback & Entwicklung**
+- **Feature-Requests**: Neue Funktionen vorschlagen
+- **Bug-Reports**: Probleme melden und beheben
+- **Community-Forum**: Austausch mit anderen Nutzern
+
+---
+
+## 📄 Lizenz
+
+Dieses Plugin steht unter der MIT-Lizenz und kann frei verwendet, modifiziert und weiterverbreitet werden.
+
+---
+
+**Viel Spaß beim intelligenten Musik-Tagging mit KI-Unterstützung! 🎶🤖✨** 
