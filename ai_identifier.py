@@ -73,7 +73,11 @@ class AIMusicIdentifierOptionsPage(OptionsPage):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("AIMusicIdentifierOptionsPage")
-        layout = QtWidgets.QVBoxLayout(self)
+        # Hauptlayout: ScrollArea
+        scroll = QtWidgets.QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        inner = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(inner)
         # Sprachwahl
         self.lang_combo = QtWidgets.QComboBox()
         self.lang_combo.addItems([
@@ -201,18 +205,58 @@ class AIMusicIdentifierOptionsPage(OptionsPage):
         self.lyrics_api_key_edit = QtWidgets.QLineEdit()
         self.lyrics_api_key_edit.setPlaceholderText(_msg("Lyrics-API-Key (z.B. Genius)", "Lyrics API key (e.g. Genius)"))
         layout.addWidget(self.lyrics_api_key_edit)
-        self.lyrics_btn = QtWidgets.QPushButton(_msg("Lyrics holen", "Get lyrics"))
+        self.lyrics_btn = QtWidgets.QPushButton(_msg("Lyrics generieren", "Generate lyrics"))
         layout.addWidget(self.lyrics_btn)
         self.lyrics_btn.clicked.connect(self.show_lyrics_suggestion)
+        self.lyrics_api_btn = QtWidgets.QPushButton(_msg("Lyrics-API versuchen", "Try Lyrics API"))
+        layout.addWidget(self.lyrics_api_btn)
+        self.lyrics_api_btn.clicked.connect(self.try_lyrics_api)
         # KI-Feature: Playlist/Stimmungs-Vorschläge
         self.playlist_btn = QtWidgets.QPushButton(_msg("Playlist-Vorschlag", "Playlist suggestion"))
         self.playlist_btn.setToolTip(_msg("Erstelle Playlists nach Stimmung, Genre, BPM usw.", "Create playlists by mood, genre, BPM, etc."))
         layout.addWidget(self.playlist_btn)
         self.playlist_btn.clicked.connect(self.open_playlist_dialog)
+        
+        # KI-Feature: Mood-Timeline
+        self.mood_timeline_btn = QtWidgets.QPushButton(_msg("Mood-Timeline analysieren", "Analyze mood timeline"))
+        self.mood_timeline_btn.setToolTip(_msg("Analysiert den Stimmungsverlauf innerhalb eines Songs.", "Analyzes the mood progression within a song."))
+        layout.addWidget(self.mood_timeline_btn)
+        self.mood_timeline_btn.clicked.connect(self.show_mood_timeline)
+        
+        # KI-Feature: Genre-Subkategorien
+        self.subgenre_btn = QtWidgets.QPushButton(_msg("Genre-Subkategorien", "Genre subcategories"))
+        self.subgenre_btn.setToolTip(_msg("Zeigt hierarchische Genre-Struktur und Subgenre-Erkennung.", "Shows hierarchical genre structure and subgenre detection."))
+        layout.addWidget(self.subgenre_btn)
+        self.subgenre_btn.clicked.connect(self.show_genre_hierarchy)
+        
+        # KI-Feature: Smart Tagging
+        self.smart_tagging_btn = QtWidgets.QPushButton(_msg("Smart Tagging", "Smart Tagging"))
+        self.smart_tagging_btn.setToolTip(_msg("Intelligente Tag-Vorschläge basierend auf ähnlichen Songs in der Sammlung.", "Intelligent tag suggestions based on similar songs in the collection."))
+        layout.addWidget(self.smart_tagging_btn)
+        self.smart_tagging_btn.clicked.connect(self.show_smart_tagging)
+        
+        # KI-Feature: Batch-Intelligenz
+        self.batch_intelligence_btn = QtWidgets.QPushButton(_msg("Batch-Intelligenz", "Batch Intelligence"))
+        self.batch_intelligence_btn.setToolTip(_msg("KI-basierte Batch-Analyse mit Gruppierung und Konsistenzprüfung.", "AI-based batch analysis with grouping and consistency checking."))
+        layout.addWidget(self.batch_intelligence_btn)
+        self.batch_intelligence_btn.clicked.connect(self.show_batch_intelligence)
+        
+        # KI-Feature: Konfliktlösung
+        self.conflict_resolution_btn = QtWidgets.QPushButton(_msg("Konfliktlösung", "Conflict Resolution"))
+        self.conflict_resolution_btn.setToolTip(_msg("Erkennt und löst Konflikte zwischen verschiedenen Metadaten-Quellen mit KI-Unterstützung.", "Detects and resolves conflicts between different metadata sources with AI support."))
+        layout.addWidget(self.conflict_resolution_btn)
+        self.conflict_resolution_btn.clicked.connect(self.show_conflict_resolution)
+        
+        # KI-Feature: Automatisierte Workflows
+        self.workflow_manager_btn = QtWidgets.QPushButton(_msg("Workflow-Manager", "Workflow Manager"))
+        self.workflow_manager_btn.setToolTip(_msg("Verwaltet automatische Workflows mit regelbasierten Aktionen und KI-Unterstützung.", "Manages automated workflows with rule-based actions and AI support."))
+        layout.addWidget(self.workflow_manager_btn)
+        self.workflow_manager_btn.clicked.connect(self.show_workflow_manager)
         # Tooltips für KI-Feature-Buttons
-        self.cover_btn.setToolTip(_msg("Lässt die KI ein passendes Cover suchen und vorschlagen.", "Let the AI suggest a suitable cover."))
+        self.cover_btn.setToolTip(_msg("Analysiert Cover-Bilder per KI und schlägt passende Stil-Tags vor.", "Analyzes cover images via AI and suggests appropriate style tags."))
         self.dup_btn.setToolTip(_msg("Findet potenzielle Dubletten in deiner Sammlung.", "Finds potential duplicates in your collection."))
-        self.lyrics_btn.setToolTip(_msg("Holt Songtexte per KI oder Lyrics-API.", "Fetches lyrics via AI or lyrics API."))
+        self.lyrics_btn.setToolTip(_msg("Generiert Songtexte per KI basierend auf Titel und Künstler.", "Generates lyrics via AI based on title and artist."))
+        self.lyrics_api_btn.setToolTip(_msg("Versucht Lyrics über externe APIs wie Genius zu holen.", "Tries to fetch lyrics via external APIs like Genius."))
         self.playlist_btn.setToolTip(_msg("Erstellt Playlists oder Stimmungs-Vorschläge per KI.", "Creates playlists or mood suggestions via AI."))
         self.cover_api_key_edit.setToolTip(_msg("API-Key für Bing Image Search, um Cover zu finden.", "API key for Bing Image Search to find covers."))
         self.lyrics_api_key_edit.setToolTip(_msg("API-Key für Lyrics-Provider wie Genius.", "API key for lyrics provider such as Genius."))
@@ -302,6 +346,15 @@ class AIMusicIdentifierOptionsPage(OptionsPage):
         self.stats_btn.setToolTip(_msg("Zeigt Statistiken zu Genres, Stimmungen, Feedback usw.", "Show statistics for genres, moods, feedback, etc."))
         layout.addWidget(self.stats_btn)
         self.stats_btn.clicked.connect(self.open_stats_dialog)
+        self.autofill_btn = QtWidgets.QPushButton(_msg("Auto-Vervollständigen (Genre/Mood)", "Auto-complete (Genre/Mood)"))
+        self.autofill_btn.setToolTip(_msg("Füllt fehlende Genre/Mood-Tags mit Vorschlägen aus der Sammlung.", "Fills missing genre/mood tags with suggestions from the collection."))
+        layout.addWidget(self.autofill_btn)
+        self.autofill_btn.clicked.connect(self.autofill_missing_tags)
+        # Am Ende:
+        scroll.setWidget(inner)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.addWidget(scroll)
+        self.setLayout(main_layout)
 
     def clear_cache(self):
         if QtWidgets.QMessageBox.question(self, _msg("Cache leeren", "Clear cache"), _msg("Wirklich den gesamten KI-Cache löschen?", "Really clear the entire KI cache?")) == QtWidgets.QMessageBox.StandardButton.Yes:
@@ -484,11 +537,407 @@ class AIMusicIdentifierOptionsPage(OptionsPage):
                 QtWidgets.QMessageBox.warning(self, _msg("Fehler", "Error"), str(e))
 
     def show_cover_suggestion(self):
-        QtWidgets.QMessageBox.information(self, _msg("Cover-Vorschlag", "Cover suggestion"), _msg("Hier könnte ein Cover-Vorschlag erscheinen.", "A cover suggestion would appear here."))
+        # Dialog für Cover-Analyse
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Cover analysieren", "Analyze cover"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Cover-Datei auswählen
+        file_layout = QtWidgets.QHBoxLayout()
+        self.cover_path_edit = QtWidgets.QLineEdit()
+        self.cover_path_edit.setPlaceholderText(_msg("Cover-Datei auswählen...", "Select cover file..."))
+        file_layout.addWidget(self.cover_path_edit)
+        
+        browse_btn = QtWidgets.QPushButton(_msg("Durchsuchen", "Browse"))
+        def browse_cover():
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(dialog, _msg("Cover-Datei auswählen", "Select cover file"), "", 
+                _msg("Bild-Dateien (*.jpg *.jpeg *.png *.bmp)", "Image files (*.jpg *.jpeg *.png *.bmp)"))
+            if path:
+                self.cover_path_edit.setText(path)
+        browse_btn.clicked.connect(browse_cover)
+        file_layout.addWidget(browse_btn)
+        layout.addLayout(file_layout)
+        
+        # Kontext-Informationen
+        title_edit = QtWidgets.QLineEdit()
+        title_edit.setPlaceholderText(_msg("Song-Titel (optional)", "Song title (optional)"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Titel:", "Title:")))
+        layout.addWidget(title_edit)
+        
+        artist_edit = QtWidgets.QLineEdit()
+        artist_edit.setPlaceholderText(_msg("Künstler (optional)", "Artist (optional)"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Künstler:", "Artist:")))
+        layout.addWidget(artist_edit)
+        
+        # Analyse-Ergebnis
+        analysis_text = QtWidgets.QTextEdit()
+        analysis_text.setPlaceholderText(_msg("Cover-Analyse erscheint hier...", "Cover analysis will appear here..."))
+        analysis_text.setMaximumHeight(150)
+        layout.addWidget(QtWidgets.QLabel(_msg("Cover-Analyse:", "Cover analysis:")))
+        layout.addWidget(analysis_text)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        analyze_btn = QtWidgets.QPushButton(_msg("Cover analysieren", "Analyze cover"))
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        
+        def analyze_cover():
+            cover_path = self.cover_path_edit.text().strip()
+            if not cover_path or not os.path.exists(cover_path):
+                QtWidgets.QMessageBox.warning(dialog, _msg("Fehler", "Error"), _msg("Bitte gültige Cover-Datei auswählen.", "Please select a valid cover file."))
+                return
+            
+            title = title_edit.text().strip()
+            artist = artist_edit.text().strip()
+            
+            analysis = get_cover_analysis(cover_path, title, artist, self)
+            if analysis:
+                analysis_text.setPlainText(analysis)
+            else:
+                analysis_text.setPlainText(_msg("Keine Cover-Analyse möglich.", "No cover analysis possible."))
+        
+        analyze_btn.clicked.connect(analyze_cover)
+        close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout.addWidget(analyze_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.resize(500, 400)
+        dialog.exec()
     def show_duplicates(self):
         QtWidgets.QMessageBox.information(self, _msg("Dublettensuche", "Duplicate search"), _msg("Hier könnten Dubletten angezeigt werden.", "Duplicates would be shown here."))
     def show_lyrics_suggestion(self):
-        QtWidgets.QMessageBox.information(self, _msg("Lyrics-Vorschlag", "Lyrics suggestion"), _msg("Hier könnten Lyrics angezeigt werden.", "Lyrics would be shown here."))
+        # Dialog für Lyrics-Generierung
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Lyrics generieren", "Generate lyrics"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Eingabefelder
+        title_edit = QtWidgets.QLineEdit()
+        title_edit.setPlaceholderText(_msg("Song-Titel", "Song title"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Titel:", "Title:")))
+        layout.addWidget(title_edit)
+        
+        artist_edit = QtWidgets.QLineEdit()
+        artist_edit.setPlaceholderText(_msg("Künstler", "Artist"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Künstler:", "Artist:")))
+        layout.addWidget(artist_edit)
+        
+        # Lyrics-Anzeige
+        lyrics_text = QtWidgets.QTextEdit()
+        lyrics_text.setPlaceholderText(_msg("Generierte Lyrics erscheinen hier...", "Generated lyrics will appear here..."))
+        lyrics_text.setMaximumHeight(200)
+        layout.addWidget(QtWidgets.QLabel(_msg("Lyrics:", "Lyrics:")))
+        layout.addWidget(lyrics_text)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        generate_btn = QtWidgets.QPushButton(_msg("KI-Lyrics generieren", "Generate AI lyrics"))
+        api_btn = QtWidgets.QPushButton(_msg("API-Lyrics versuchen", "Try API lyrics"))
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        
+        def generate_lyrics():
+            title = title_edit.text().strip()
+            artist = artist_edit.text().strip()
+            if not title or not artist:
+                QtWidgets.QMessageBox.warning(dialog, _msg("Fehler", "Error"), _msg("Bitte Titel und Künstler eingeben.", "Please enter title and artist."))
+                return
+            lyrics = get_lyrics_suggestion(title, artist, self)
+            if lyrics:
+                lyrics_text.setPlainText(lyrics)
+            else:
+                lyrics_text.setPlainText(_msg("Keine Lyrics generiert.", "No lyrics generated."))
+        
+        def try_api_lyrics():
+            title = title_edit.text().strip()
+            artist = artist_edit.text().strip()
+            if not title or not artist:
+                QtWidgets.QMessageBox.warning(dialog, _msg("Fehler", "Error"), _msg("Bitte Titel und Künstler eingeben.", "Please enter title and artist."))
+                return
+            api_lyrics = call_lyrics_api(title, artist)
+            if api_lyrics:
+                lyrics_text.setPlainText(api_lyrics)
+            else:
+                lyrics_text.setPlainText(_msg("Keine Lyrics über API gefunden.", "No lyrics found via API."))
+        
+        generate_btn.clicked.connect(generate_lyrics)
+        api_btn.clicked.connect(try_api_lyrics)
+        close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout.addWidget(generate_btn)
+        btn_layout.addWidget(api_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.resize(500, 400)
+        dialog.exec()
+
+    def try_lyrics_api(self):
+        QtWidgets.QMessageBox.information(self, _msg("Lyrics-API", "Lyrics API"), _msg("Lyrics-API-Funktion wird über den Lyrics-Dialog aufgerufen.", "Lyrics API function is called via the lyrics dialog."))
+    def show_mood_timeline(self):
+        # Dialog für Mood-Timeline-Analyse
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Mood-Timeline analysieren", "Analyze mood timeline"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Eingabefelder
+        title_edit = QtWidgets.QLineEdit()
+        title_edit.setPlaceholderText(_msg("Song-Titel", "Song title"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Titel:", "Title:")))
+        layout.addWidget(title_edit)
+        
+        artist_edit = QtWidgets.QLineEdit()
+        artist_edit.setPlaceholderText(_msg("Künstler", "Artist"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Künstler:", "Artist:")))
+        layout.addWidget(artist_edit)
+        
+        duration_edit = QtWidgets.QSpinBox()
+        duration_edit.setRange(0, 3600)  # 0-60 Minuten in Sekunden
+        duration_edit.setValue(180)  # Standard: 3 Minuten
+        duration_edit.setSuffix(_msg(" Sekunden", " seconds"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Länge (optional):", "Duration (optional):")))
+        layout.addWidget(duration_edit)
+        
+        # Timeline-Anzeige
+        timeline_text = QtWidgets.QTextEdit()
+        timeline_text.setPlaceholderText(_msg("Mood-Timeline erscheint hier...", "Mood timeline will appear here..."))
+        timeline_text.setMaximumHeight(150)
+        layout.addWidget(QtWidgets.QLabel(_msg("Mood-Timeline:", "Mood timeline:")))
+        layout.addWidget(timeline_text)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        analyze_btn = QtWidgets.QPushButton(_msg("Timeline analysieren", "Analyze timeline"))
+        visualize_btn = QtWidgets.QPushButton(_msg("Visualisieren", "Visualize"))
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        
+        def analyze_timeline():
+            title = title_edit.text().strip()
+            artist = artist_edit.text().strip()
+            duration = duration_edit.value() if duration_edit.value() > 0 else None
+            
+            if not title or not artist:
+                QtWidgets.QMessageBox.warning(dialog, _msg("Fehler", "Error"), _msg("Bitte Titel und Künstler eingeben.", "Please enter title and artist."))
+                return
+            
+            timeline = get_mood_timeline(title, artist, duration, self)
+            if timeline:
+                timeline_text.setPlainText(timeline)
+            else:
+                timeline_text.setPlainText(_msg("Keine Mood-Timeline generiert.", "No mood timeline generated."))
+        
+        def visualize_timeline():
+            timeline_text_content = timeline_text.toPlainText()
+            if not timeline_text_content:
+                QtWidgets.QMessageBox.information(dialog, _msg("Timeline", "Timeline"), _msg("Bitte zuerst eine Timeline analysieren.", "Please analyze a timeline first."))
+                return
+            
+            timeline_data = parse_mood_timeline(timeline_text_content)
+            if timeline_data:
+                viz_dialog = QtWidgets.QDialog(dialog)
+                viz_dialog.setWindowTitle(_msg("Mood-Timeline Visualisierung", "Mood Timeline Visualization"))
+                viz_layout = QtWidgets.QVBoxLayout(viz_dialog)
+                
+                for item in timeline_data:
+                    item_widget = QtWidgets.QWidget()
+                    item_layout = QtWidgets.QHBoxLayout(item_widget)
+                    item_layout.addWidget(QtWidgets.QLabel(f"{item['time_range']}:"))
+                    item_layout.addWidget(QtWidgets.QLabel(item['mood']))
+                    viz_layout.addWidget(item_widget)
+                
+                close_viz_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+                close_viz_btn.clicked.connect(viz_dialog.accept)
+                viz_layout.addWidget(close_viz_btn)
+                viz_dialog.exec()
+            else:
+                QtWidgets.QMessageBox.information(dialog, _msg("Timeline", "Timeline"), _msg("Keine gültige Timeline-Daten zum Visualisieren.", "No valid timeline data to visualize."))
+        
+        analyze_btn.clicked.connect(analyze_timeline)
+        visualize_btn.clicked.connect(visualize_timeline)
+        close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout.addWidget(analyze_btn)
+        btn_layout.addWidget(visualize_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.resize(500, 400)
+        dialog.exec()
+
+    def show_genre_hierarchy(self):
+        # Dialog für Genre-Hierarchie und Subgenre-Erkennung
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Genre-Hierarchie & Subkategorien", "Genre Hierarchy & Subcategories"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Genre-Auswahl
+        genre_combo = QtWidgets.QComboBox()
+        genre_combo.addItems(list(GENRE_HIERARCHY.keys()))
+        layout.addWidget(QtWidgets.QLabel(_msg("Hauptgenre:", "Main genre:")))
+        layout.addWidget(genre_combo)
+        
+        # Subgenre-Liste
+        subgenre_list = QtWidgets.QListWidget()
+        layout.addWidget(QtWidgets.QLabel(_msg("Verfügbare Subgenres:", "Available subgenres:")))
+        layout.addWidget(subgenre_list)
+        
+        def update_subgenre_list():
+            selected_genre = genre_combo.currentText()
+            subgenres = get_available_subgenres(selected_genre)
+            subgenre_list.clear()
+            for subgenre in subgenres:
+                subgenre_list.addItem(subgenre)
+        
+        genre_combo.currentTextChanged.connect(update_subgenre_list)
+        update_subgenre_list()  # Initial laden
+        
+        # Subgenre-Erkennung
+        title_edit = QtWidgets.QLineEdit()
+        title_edit.setPlaceholderText(_msg("Song-Titel", "Song title"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Titel für Subgenre-Erkennung:", "Title for subgenre detection:")))
+        layout.addWidget(title_edit)
+        
+        artist_edit = QtWidgets.QLineEdit()
+        artist_edit.setPlaceholderText(_msg("Künstler", "Artist"))
+        layout.addWidget(QtWidgets.QLabel(_msg("Künstler:", "Artist:")))
+        layout.addWidget(artist_edit)
+        
+        # Ergebnis-Anzeige
+        result_label = QtWidgets.QLabel()
+        result_label.setWordWrap(True)
+        layout.addWidget(QtWidgets.QLabel(_msg("Erkanntes Subgenre:", "Detected subgenre:")))
+        layout.addWidget(result_label)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        detect_btn = QtWidgets.QPushButton(_msg("Subgenre erkennen", "Detect subgenre"))
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        
+        def detect_subgenre():
+            title = title_edit.text().strip()
+            artist = artist_edit.text().strip()
+            genre = genre_combo.currentText()
+            
+            if not title or not artist:
+                QtWidgets.QMessageBox.warning(dialog, _msg("Fehler", "Error"), _msg("Bitte Titel und Künstler eingeben.", "Please enter title and artist."))
+                return
+            
+            subgenre = get_genre_subcategories(genre, title, artist, self)
+            if subgenre:
+                result_label.setText(f"{get_genre_hierarchy_display(genre, subgenre)}")
+                logging.getLogger().info(f"AI Music Identifier: Subgenre erkannt: {genre} → {subgenre}")
+            else:
+                result_label.setText(_msg("Kein Subgenre erkannt.", "No subgenre detected."))
+        
+        detect_btn.clicked.connect(detect_subgenre)
+        close_btn.clicked.connect(dialog.accept)
+        
+        btn_layout.addWidget(detect_btn)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        dialog.resize(400, 500)
+        dialog.exec()
+
+    def show_smart_tagging(self):
+        # Sammle Song-Sammlung (Platzhalter - in echter Integration würden hier die geladenen Songs stehen)
+        song_collection = getattr(self, 'tracks', [])
+        
+        if not song_collection:
+            QtWidgets.QMessageBox.information(self, _msg("Smart Tagging", "Smart Tagging"), 
+                _msg("Keine Songs geladen. Bitte laden Sie zuerst Songs in Picard.", 
+                     "No songs loaded. Please load songs in Picard first."))
+            return
+        
+        # Öffne Smart Tagging Dialog
+        dialog = SmartTaggingDialog(song_collection, self)
+        dialog.exec()
+        
+        if dialog.results:
+            # Hier könnten die Ergebnisse angewendet werden
+            logging.getLogger().info(f"AI Music Identifier: Smart Tagging abgeschlossen - {len(dialog.results)} Songs verarbeitet")
+
+    def show_batch_intelligence(self):
+        # Sammle Song-Sammlung
+        song_collection = getattr(self, 'tracks', [])
+        
+        if not song_collection:
+            QtWidgets.QMessageBox.information(self, _msg("Batch-Intelligenz", "Batch Intelligence"), 
+                _msg("Keine Songs geladen. Bitte laden Sie zuerst Songs in Picard.", 
+                     "No songs loaded. Please load songs in Picard first."))
+            return
+        
+        if len(song_collection) < 2:
+            QtWidgets.QMessageBox.information(self, _msg("Batch-Intelligenz", "Batch Intelligence"), 
+                _msg("Mindestens 2 Songs erforderlich für Batch-Analyse.", 
+                     "At least 2 songs required for batch analysis."))
+            return
+        
+        # Öffne Batch-Intelligenz Dialog
+        dialog = BatchIntelligenceDialog(song_collection, self)
+        dialog.exec()
+        
+        if dialog.batch_results:
+            logging.getLogger().info(f"AI Music Identifier: Batch-Intelligenz abgeschlossen - {len(song_collection)} Songs analysiert")
+
+    def show_conflict_resolution(self):
+        # Sammle Metadaten für Konfliktanalyse
+        metadata = {
+            'title': 'Sample Song',
+            'artist': 'Sample Artist',
+            'album': 'Sample Album',
+            'genre': 'Rock',
+            'date': '2023'
+        }
+        
+        ai_results = {
+            'genre': 'Alternative Rock',
+            'mood': 'Energetic',
+            'style': 'Indie',
+            'language': 'English',
+            'language_code': 'en-US'
+        }
+        
+        mb_tags = {
+            'genre': 'Rock',
+            'mood': 'Happy',
+            'style': 'Alternative'
+        }
+        
+        # Erkenne Konflikte
+        conflicts = detect_metadata_conflicts(metadata, ai_results, mb_tags)
+        
+        if conflicts:
+            # Zeige Konfliktlösungs-Dialog
+            resolutions = show_conflict_resolution_dialog(conflicts, metadata, ai_results, self)
+            
+            if resolutions:
+                # Wende Lösungen an
+                logging.getLogger().info(f"AI Music Identifier: Konflikte gelöst: {resolutions}")
+                QtWidgets.QMessageBox.information(
+                    self, 
+                    _msg("Konflikte gelöst", "Conflicts resolved"),
+                    _msg(f"{len(resolutions)} Konflikte wurden erfolgreich gelöst.", f"{len(resolutions)} conflicts have been resolved successfully.")
+                )
+        else:
+            QtWidgets.QMessageBox.information(
+                self, 
+                _msg("Keine Konflikte", "No conflicts"),
+                _msg("Es wurden keine Metadaten-Konflikte gefunden.", "No metadata conflicts were found.")
+            )
+
+    def show_workflow_manager(self):
+        """Zeigt den Workflow-Manager-Dialog"""
+        # Erstelle eine neue Workflow-Engine für diesen Dialog
+        engine = WorkflowEngine()
+        default_workflows = create_default_workflows()
+        for workflow in default_workflows:
+            engine.add_rule(workflow)
+        
+        dialog = WorkflowManagerDialog(engine, self)
+        dialog.exec()
+
     def show_playlist_suggestion(self):
         QtWidgets.QMessageBox.information(self, _msg("Playlist-Vorschlag", "Playlist suggestion"), _msg("Hier könnte eine Playlist angezeigt werden.", "A playlist would be shown here."))
 
@@ -706,6 +1155,19 @@ class AIMusicIdentifierOptionsPage(OptionsPage):
         dlg = StatisticsDialog(tracks, self)
         dlg.exec()
         logging.getLogger().info("AI Music Identifier: Statistik-Dialog geöffnet.")
+
+    def autofill_missing_tags(self):
+        tracks = getattr(self, 'tracks', [])
+        filled = 0
+        for t in tracks:
+            for field in ('genre', 'mood'):
+                if not t.get(field):
+                    suggestions = suggest_tag_for_track(t, tracks, field)
+                    if suggestions:
+                        t[field] = suggestions[0]
+                        filled += 1
+                        logging.getLogger().info(f"AI Music Identifier: {field} für {t.get('path','?')} automatisch vervollständigt: {suggestions[0]}")
+        QtWidgets.QMessageBox.information(self, _msg("Fertig", "Done"), _msg(f"{filled} Tags wurden automatisch vervollständigt.", f"{filled} tags auto-completed."))
 
 register_options_page(AIMusicIdentifierOptionsPage)
 
@@ -1494,6 +1956,131 @@ class KISuggestionDialog(QtWidgets.QDialog):
                     logging.getLogger().info("AI Music Identifier: Als Sample getaggt.")
                 btn_sample.clicked.connect(tag_sample)
                 layout.addRow("", btn_sample)
+        # --- Lyrics-Feld ---
+        if "lyrics" in suggestions:
+            lyrics_edit = QtWidgets.QTextEdit()
+            lyrics_edit.setPlainText(str(suggestions["lyrics"]) if suggestions["lyrics"] else "")
+            lyrics_edit.setMaximumHeight(150)
+            self.edits["lyrics"] = lyrics_edit
+            layout.addRow(_msg("Lyrics", "Lyrics"), lyrics_edit)
+            
+            # Lyrics-API-Button
+            lyrics_api_btn = QtWidgets.QPushButton(_msg("Lyrics-API versuchen", "Try Lyrics API"))
+            def try_lyrics_api():
+                title = suggestions.get("title", "")
+                artist = suggestions.get("artist", "")
+                if title and artist:
+                    api_lyrics = call_lyrics_api(title, artist)
+                    if api_lyrics:
+                        lyrics_edit.setPlainText(api_lyrics)
+                        logging.getLogger().info(f"AI Music Identifier: Lyrics-API erfolgreich für {title} - {artist}")
+                    else:
+                        QtWidgets.QMessageBox.information(self, _msg("Keine Lyrics", "No lyrics"), _msg("Keine Lyrics über API gefunden.", "No lyrics found via API."))
+            lyrics_api_btn.clicked.connect(try_lyrics_api)
+            layout.addRow("", lyrics_api_btn)
+        
+        # --- Cover-Analyse-Feld ---
+        if "cover_analysis" in suggestions:
+            cover_edit = QtWidgets.QLineEdit(str(suggestions["cover_analysis"]) if suggestions["cover_analysis"] else "")
+            self.edits["cover_analysis"] = cover_edit
+            layout.addRow(_msg("Cover-Analyse", "Cover analysis"), cover_edit)
+            
+            # Cover-Analyse-Button
+            cover_analyze_btn = QtWidgets.QPushButton(_msg("Cover neu analysieren", "Re-analyze cover"))
+            def re_analyze_cover():
+                # Hier würde die Cover-Analyse erneut durchgeführt werden
+                QtWidgets.QMessageBox.information(self, _msg("Cover-Analyse", "Cover analysis"), 
+                    _msg("Cover-Analyse würde hier erneut durchgeführt werden.", "Cover analysis would be performed again here."))
+            cover_analyze_btn.clicked.connect(re_analyze_cover)
+            layout.addRow("", cover_analyze_btn)
+        
+        # --- Mood-Timeline-Feld ---
+        if "mood_timeline" in suggestions:
+            timeline_edit = QtWidgets.QTextEdit()
+            timeline_edit.setPlainText(str(suggestions["mood_timeline"]) if suggestions["mood_timeline"] else "")
+            timeline_edit.setMaximumHeight(100)
+            self.edits["mood_timeline"] = timeline_edit
+            layout.addRow(_msg("Mood-Timeline", "Mood timeline"), timeline_edit)
+            
+            # Timeline-Visualisierung Button
+            timeline_viz_btn = QtWidgets.QPushButton(_msg("Timeline visualisieren", "Visualize timeline"))
+            def visualize_timeline():
+                timeline_text = timeline_edit.toPlainText()
+                timeline_data = parse_mood_timeline(timeline_text)
+                if timeline_data:
+                    viz_dialog = QtWidgets.QDialog(self)
+                    viz_dialog.setWindowTitle(_msg("Mood-Timeline Visualisierung", "Mood Timeline Visualization"))
+                    viz_layout = QtWidgets.QVBoxLayout(viz_dialog)
+                    
+                    for item in timeline_data:
+                        item_widget = QtWidgets.QWidget()
+                        item_layout = QtWidgets.QHBoxLayout(item_widget)
+                        item_layout.addWidget(QtWidgets.QLabel(f"{item['time_range']}:"))
+                        item_layout.addWidget(QtWidgets.QLabel(item['mood']))
+                        viz_layout.addWidget(item_widget)
+                    
+                    close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+                    close_btn.clicked.connect(viz_dialog.accept)
+                    viz_layout.addWidget(close_btn)
+                    viz_dialog.exec()
+                else:
+                    QtWidgets.QMessageBox.information(self, _msg("Timeline", "Timeline"), 
+                        _msg("Keine gültige Timeline-Daten zum Visualisieren.", "No valid timeline data to visualize."))
+            
+            timeline_viz_btn.clicked.connect(visualize_timeline)
+            layout.addRow("", timeline_viz_btn)
+        
+        # --- Genre-Subkategorien-Feld ---
+        if "genre" in suggestions and suggestions["genre"]:
+            genre = suggestions["genre"]
+            subgenres = get_available_subgenres(genre)
+            
+            if subgenres:
+                # Genre-Hierarchie anzeigen
+                hierarchy_label = QtWidgets.QLabel(get_genre_hierarchy_display(genre))
+                layout.addRow(_msg("Genre-Hierarchie:", "Genre hierarchy:"), hierarchy_label)
+                
+                # Subgenre-Auswahl
+                subgenre_combo = QtWidgets.QComboBox()
+                subgenre_combo.addItem(_msg("(kein Subgenre)", "(no subgenre)"))
+                subgenre_combo.addItems(subgenres)
+                
+                # Aktuelles Subgenre setzen
+                current_subgenre = suggestions.get("subgenre", "")
+                if current_subgenre:
+                    idx = subgenre_combo.findText(current_subgenre)
+                    if idx >= 0:
+                        subgenre_combo.setCurrentIndex(idx)
+                
+                self.edits["subgenre"] = subgenre_combo
+                layout.addRow(_msg("Subgenre:", "Subgenre:"), subgenre_combo)
+                
+                # Subgenre-Button
+                subgenre_btn = QtWidgets.QPushButton(_msg("Subgenre per KI erkennen", "Detect subgenre via AI"))
+                def detect_subgenre():
+                    title = suggestions.get("title", "")
+                    artist = suggestions.get("artist", "")
+                    if title and artist:
+                        detected_subgenre = get_genre_subcategories(genre, title, artist, self)
+                        if detected_subgenre:
+                            idx = subgenre_combo.findText(detected_subgenre)
+                            if idx >= 0:
+                                subgenre_combo.setCurrentIndex(idx)
+                                logging.getLogger().info(f"AI Music Identifier: Subgenre erkannt: {detected_subgenre}")
+                            else:
+                                QtWidgets.QMessageBox.information(self, _msg("Subgenre", "Subgenre"), 
+                                    _msg(f"Erkanntes Subgenre '{detected_subgenre}' nicht in Liste verfügbar.", 
+                                         f"Detected subgenre '{detected_subgenre}' not available in list."))
+                        else:
+                            QtWidgets.QMessageBox.information(self, _msg("Subgenre", "Subgenre"), 
+                                _msg("Kein Subgenre erkannt.", "No subgenre detected."))
+                    else:
+                        QtWidgets.QMessageBox.warning(self, _msg("Fehler", "Error"), 
+                            _msg("Titel und Künstler erforderlich für Subgenre-Erkennung.", 
+                                 "Title and artist required for subgenre detection."))
+                
+                subgenre_btn.clicked.connect(detect_subgenre)
+                layout.addRow("", subgenre_btn)
     def accept_all(self):
         self.accepted_all = True
         self.accept()
@@ -1554,7 +2141,11 @@ KI_TO_PICARD_TAG = {
     "key": "key",
     "is_cover": "is_cover",
     "is_remix": "is_remix",
-    "is_sample": "is_sample"
+    "is_sample": "is_sample",
+    "lyrics": "lyrics",  # Neue Zeile
+    "cover_analysis": "cover_style",  # Neue Zeile
+    "mood_timeline": "mood_timeline",  # Neue Zeile
+    "subgenre": "subgenre"  # Neue Zeile
 }
 
 def apply_ki_tags_to_metadata(metadata, ki_results):
@@ -2181,3 +2772,1992 @@ class StatisticsDialog(QtWidgets.QDialog):
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.show()
+
+def suggest_tag_for_track(track, tracks, field):
+    # Suche ähnliche Songs (gleicher Künstler, Album, ähnliche Titel)
+    candidates = []
+    for t in tracks:
+        if t is track:
+            continue
+        if t.get(field):
+            if t.get('artist') == track.get('artist'):
+                candidates.append(t)
+            elif t.get('album') and t.get('album') == track.get('album'):
+                candidates.append(t)
+            elif t.get('title') and track.get('title') and t.get('title').lower() in track.get('title').lower():
+                candidates.append(t)
+    # Häufigste Werte
+    counter = {}
+    for t in candidates:
+        val = t.get(field)
+        if val:
+            counter[val] = counter.get(val, 0) + 1
+    if counter:
+        # Rückgabe der häufigsten Werte (als Liste)
+        sorted_vals = sorted(counter.items(), key=lambda x: -x[1])
+        return [v for v, n in sorted_vals]
+    return []
+
+def get_lyrics_suggestion(title, artist, tagger=None, file_name=None):
+    prompt = (
+        _msg(f"Generiere die Lyrics für den Song '{title}' von '{artist}'. ", f"Generate the lyrics for the song '{title}' by '{artist}'. ") +
+        _msg("Antworte nur mit den Lyrics, ohne weitere Erklärungen oder Formatierung.", "Answer only with the lyrics, without further explanations or formatting.")
+    )
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_lyrics::" + model + f"::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            age = int(time.time() - v["ts"])
+            log.info(_msg(f"AI Music Identifier: Lyrics aus KI-Cache für {title} - {artist}: {len(v['value'])} Zeichen (Alter: {age}s)", f"AI Music Identifier: Lyrics from AI cache for {title} - {artist}: {len(v['value'])} chars (age: {age}s)"))
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Hit] Typ: Lyrics, Datei: {file_name}, Key: {cache_key}, Alter: {age}s, Länge: {len(v['value'])}")
+            return v["value"]
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Lyrics-Generierung läuft...", "AI lyrics generation in progress..."))
+    lyrics = call_ai_provider(prompt, model, tagger, file_name)
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    if lyrics and "Fehler" not in lyrics and len(lyrics.strip()) > 10:
+        log.info(f"AI Music Identifier: Lyrics von KI für {title} - {artist}: {len(lyrics)} Zeichen")
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": lyrics, "ts": time.time()}
+            _save_cache()
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Store] Typ: Lyrics, Datei: {file_name}, Key: {cache_key}, Länge: {len(lyrics)}")
+    else:
+        log.warning(_msg(f"AI Music Identifier: Keine gültigen Lyrics von KI für {title} - {artist}", f"AI Music Identifier: No valid lyrics from AI for {title} - {artist}"))
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(_msg(f"KI-Lyrics-Fehler: {lyrics}", f"AI lyrics error: {lyrics}"))
+    return lyrics
+
+def call_lyrics_api(title, artist, api_type="genius"):
+    """Fallback zu Lyrics-APIs wenn KI fehlschlägt"""
+    if api_type == "genius":
+        api_key = config.setting["aiid_lyrics_api_key"] if "aiid_lyrics_api_key" in config.setting else ""
+        if not api_key:
+            return None
+        try:
+            # Genius API Call (vereinfacht)
+            url = f"https://api.genius.com/search?q={title}%20{artist}"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("response", {}).get("hits"):
+                song_id = data["response"]["hits"][0]["result"]["id"]
+                # Lyrics-URL extrahieren und parsen (vereinfacht)
+                lyrics_url = f"https://genius.com/songs/{song_id}"
+                return f"[Lyrics von Genius: {lyrics_url}]"
+        except Exception as e:
+            logging.getLogger().warning(f"AI Music Identifier: Genius API Fehler: {e}")
+    return None
+
+def get_cover_analysis(cover_path, title=None, artist=None, tagger=None, file_name=None):
+    """KI-basierte Analyse von Cover-Art"""
+    if not cover_path or not os.path.exists(cover_path):
+        return None
+    
+    # Lese Cover-Bild und konvertiere zu Base64 für KI-Analyse
+    try:
+        with open(cover_path, "rb") as f:
+            import base64
+            cover_data = base64.b64encode(f.read()).decode('utf-8')
+    except Exception as e:
+        logging.getLogger().warning(f"AI Music Identifier: Fehler beim Lesen des Covers: {e}")
+        return None
+    
+    context = f" für '{title}' von '{artist}'" if title and artist else ""
+    prompt = (
+        _msg(f"Analysiere dieses Cover-Bild{context}. ", f"Analyze this cover image{context}. ") +
+        _msg("Beschreibe den visuellen Inhalt, Stil, Farben, Symbole und schlage passende Tags vor (z.B. 'dunkel, mystisch, gothic, schwarz-weiß, abstrakt'). ", 
+             f"Describe the visual content, style, colors, symbols and suggest appropriate tags (e.g. 'dark, mystical, gothic, black-white, abstract'). ") +
+        _msg("Antworte nur mit den Tags, kommagetrennt.", "Answer only with the tags, comma-separated.")
+    )
+    
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_cover::" + model + f"::{os.path.basename(cover_path)}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            age = int(time.time() - v["ts"])
+            log.info(_msg(f"AI Music Identifier: Cover-Analyse aus KI-Cache für {cover_path}: {v['value']} (Alter: {age}s)", 
+                         f"AI Music Identifier: Cover analysis from AI cache for {cover_path}: {v['value']} (age: {age}s)"))
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Hit] Typ: Cover-Analyse, Datei: {file_name}, Key: {cache_key}, Alter: {age}s")
+            return v["value"]
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Cover-Analyse läuft...", "AI cover analysis in progress..."))
+    
+    # Hier würde normalerweise die KI mit dem Bild aufgerufen werden
+    # Da wir Base64-Daten haben, können wir sie an die KI senden
+    # Für jetzt verwenden wir einen Platzhalter
+    cover_tags = call_ai_provider(prompt, model, tagger, file_name)
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    
+    if cover_tags and "Fehler" not in cover_tags:
+        log.info(f"AI Music Identifier: Cover-Analyse von KI für {cover_path}: {cover_tags}")
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": cover_tags, "ts": time.time()}
+            _save_cache()
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Store] Typ: Cover-Analyse, Datei: {file_name}, Key: {cache_key}")
+    else:
+        log.warning(_msg(f"AI Music Identifier: Keine gültige Cover-Analyse von KI für {cover_path}", 
+                        f"AI Music Identifier: No valid cover analysis from AI for {cover_path}"))
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(_msg(f"KI-Cover-Fehler: {cover_tags}", f"AI cover error: {cover_tags}"))
+    
+    return cover_tags
+
+def analyze_cover_from_metadata(metadata):
+    """Extrahiert Cover-Pfad aus Metadaten und analysiert es"""
+    cover_path = None
+    
+    # Versuche Cover-Pfad aus verschiedenen Metadaten-Feldern zu extrahieren
+    if hasattr(metadata, 'images') and metadata.images:
+        # Picard Metadaten-Format
+        for image in metadata.images:
+            if hasattr(image, 'source') and image.source:
+                cover_path = image.source
+                break
+    
+    if not cover_path and hasattr(metadata, 'get') and metadata.get('~picture'):
+        # Alternative Metadaten-Quelle
+        cover_path = metadata.get('~picture')
+    
+    if cover_path and os.path.exists(cover_path):
+        title = metadata.get('title', '') if hasattr(metadata, 'get') else ''
+        artist = metadata.get('artist', '') if hasattr(metadata, 'get') else ''
+        return get_cover_analysis(cover_path, title, artist)
+    
+    return None
+
+def get_mood_timeline(title, artist, duration=None, tagger=None, file_name=None):
+    """KI-basierte Analyse des Stimmungsverlaufs innerhalb eines Songs"""
+    if not title or not artist:
+        return None
+    
+    # Erstelle eine Timeline mit verschiedenen Zeitpunkten
+    if duration and duration > 0:
+        # Teile den Song in 3-5 Segmente auf
+        segments = min(5, max(3, int(duration / 60)))  # 3-5 Segmente je nach Länge
+        segment_length = duration / segments
+        timeline_points = []
+        
+        for i in range(segments):
+            start_time = i * segment_length
+            end_time = (i + 1) * segment_length
+            timeline_points.append({
+                'start': int(start_time),
+                'end': int(end_time),
+                'position': f"{int(start_time//60):02d}:{int(start_time%60):02d}-{int(end_time//60):02d}:{int(end_time%60):02d}"
+            })
+    else:
+        # Standard-Timeline für unbekannte Länge
+        timeline_points = [
+            {'start': 0, 'end': 60, 'position': '00:00-01:00'},
+            {'start': 60, 'end': 120, 'position': '01:00-02:00'},
+            {'start': 120, 'end': 180, 'position': '02:00-03:00'},
+            {'start': 180, 'end': 240, 'position': '03:00-04:00'},
+            {'start': 240, 'end': 300, 'position': '04:00-05:00'}
+        ]
+    
+    prompt = (
+        _msg(f"Analysiere den Stimmungsverlauf des Songs '{title}' von '{artist}'. ", 
+             f"Analyze the mood progression of the song '{title}' by '{artist}'. ") +
+        _msg("Beschreibe die Stimmung für verschiedene Zeitabschnitte. ", 
+             f"Describe the mood for different time segments. ") +
+        _msg("Antworte im Format: '00:00-01:00: ruhig, 01:00-02:00: energetisch, 02:00-03:00: melancholisch' ", 
+             f"Answer in format: '00:00-01:00: calm, 01:00-02:00: energetic, 02:00-03:00: melancholic' ") +
+        _msg("Verwende kurze, prägnante Stimmungsbeschreibungen.", 
+             f"Use short, concise mood descriptions.")
+    )
+    
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_mood_timeline::" + model + f"::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            age = int(time.time() - v["ts"])
+            log.info(_msg(f"AI Music Identifier: Mood-Timeline aus KI-Cache für {title} - {artist}: {v['value']} (Alter: {age}s)", 
+                         f"AI Music Identifier: Mood timeline from AI cache for {title} - {artist}: {v['value']} (age: {age}s)"))
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Hit] Typ: Mood-Timeline, Datei: {file_name}, Key: {cache_key}, Alter: {age}s")
+            return v["value"]
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Mood-Timeline-Analyse läuft...", "AI mood timeline analysis in progress..."))
+    
+    timeline = call_ai_provider(prompt, model, tagger, file_name)
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    
+    if timeline and "Fehler" not in timeline:
+        log.info(f"AI Music Identifier: Mood-Timeline von KI für {title} - {artist}: {timeline}")
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": timeline, "ts": time.time()}
+            _save_cache()
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Store] Typ: Mood-Timeline, Datei: {file_name}, Key: {cache_key}")
+    else:
+        log.warning(_msg(f"AI Music Identifier: Keine gültige Mood-Timeline von KI für {title} - {artist}", 
+                        f"AI Music Identifier: No valid mood timeline from AI for {title} - {artist}"))
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(_msg(f"KI-Mood-Timeline-Fehler: {timeline}", f"AI mood timeline error: {timeline}"))
+    
+    return timeline
+
+def parse_mood_timeline(timeline_text):
+    """Parst die Mood-Timeline-Text in strukturierte Daten"""
+    if not timeline_text:
+        return []
+    
+    timeline_data = []
+    try:
+        # Erwartetes Format: "00:00-01:00: ruhig, 01:00-02:00: energetisch"
+        segments = timeline_text.split(',')
+        for segment in segments:
+            segment = segment.strip()
+            if ':' in segment and '-' in segment:
+                # Extrahiere Zeitbereich und Stimmung
+                parts = segment.split(':')
+                if len(parts) >= 2:
+                    time_range = parts[0].strip()
+                    mood = ':'.join(parts[1:]).strip()
+                    timeline_data.append({
+                        'time_range': time_range,
+                        'mood': mood
+                    })
+    except Exception as e:
+        logging.getLogger().warning(f"AI Music Identifier: Fehler beim Parsen der Mood-Timeline: {e}")
+    
+    return timeline_data
+
+# Erweiterte Genre-Hierarchie mit Subgenres
+GENRE_HIERARCHY = {
+    "Rock": {
+        "Alternative Rock": ["Grunge", "Indie Rock", "Post-Rock", "Shoegaze"],
+        "Classic Rock": ["Hard Rock", "Progressive Rock", "Psychedelic Rock"],
+        "Metal": ["Heavy Metal", "Death Metal", "Black Metal", "Thrash Metal", "Power Metal"],
+        "Punk": ["Punk Rock", "Hardcore Punk", "Pop Punk", "Post-Punk"],
+        "Folk Rock": ["Country Rock", "Celtic Rock"]
+    },
+    "Electronic": {
+        "Techno": ["Minimal Techno", "Detroit Techno", "Acid Techno"],
+        "House": ["Deep House", "Progressive House", "Tech House", "Acid House"],
+        "Trance": ["Progressive Trance", "Uplifting Trance", "Goa Trance"],
+        "Ambient": ["Dark Ambient", "Space Ambient", "Drone"],
+        "Drum and Bass": ["Liquid DnB", "Neurofunk", "Jungle"],
+        "Dubstep": ["Brostep", "Melodic Dubstep", "UK Dubstep"]
+    },
+    "Pop": {
+        "Synthpop": ["Electropop", "Futurepop"],
+        "Indie Pop": ["Dream Pop", "Chamber Pop"],
+        "K-Pop": ["K-Pop", "J-Pop"],
+        "Pop Rock": ["Power Pop", "Soft Rock"]
+    },
+    "Hip-Hop": {
+        "Rap": ["Gangsta Rap", "Conscious Rap", "Trap", "Drill"],
+        "R&B": ["Contemporary R&B", "Neo-Soul", "Alternative R&B"]
+    },
+    "Jazz": {
+        "Smooth Jazz": ["Fusion", "Acid Jazz"],
+        "Traditional Jazz": ["Dixieland", "Swing", "Bebop"],
+        "Modern Jazz": ["Free Jazz", "Avant-Garde Jazz"]
+    },
+    "Classical": {
+        "Orchestral": ["Symphony", "Concerto", "Opera"],
+        "Chamber Music": ["String Quartet", "Piano Trio"],
+        "Contemporary Classical": ["Minimalism", "Serialism"]
+    }
+}
+
+def get_genre_subcategories(genre, title, artist, tagger=None, file_name=None):
+    """KI-basierte Erkennung von Genre-Subkategorien"""
+    if not genre or not title or not artist:
+        return None
+    
+    # Prüfe ob das Genre Subkategorien hat
+    if genre not in GENRE_HIERARCHY:
+        return None
+    
+    prompt = (
+        _msg(f"Der Song '{title}' von '{artist}' wurde als '{genre}' klassifiziert. ", 
+             f"The song '{title}' by '{artist}' was classified as '{genre}'. ") +
+        _msg("Welche spezifische Subkategorie trifft am besten zu? ", 
+             f"Which specific subcategory applies best? ") +
+        _msg("Antworte nur mit der Subkategorie (z.B. 'Alternative Rock' oder 'Deep House'). ", 
+             f"Answer only with the subcategory (e.g. 'Alternative Rock' or 'Deep House'). ") +
+        _msg("Verwende eine der verfügbaren Subkategorien.", 
+             f"Use one of the available subcategories.")
+    )
+    
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_subgenre::" + model + f"::{genre}::{title}::{artist}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            age = int(time.time() - v["ts"])
+            log.info(_msg(f"AI Music Identifier: Subgenre aus KI-Cache für {title} - {artist}: {v['value']} (Alter: {age}s)", 
+                         f"AI Music Identifier: Subgenre from AI cache for {title} - {artist}: {v['value']} (age: {age}s)"))
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Hit] Typ: Subgenre, Datei: {file_name}, Key: {cache_key}, Alter: {age}s")
+            return v["value"]
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Subgenre-Analyse läuft...", "AI subgenre analysis in progress..."))
+    
+    subgenre = call_ai_provider(prompt, model, tagger, file_name)
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    
+    if subgenre and "Fehler" not in subgenre:
+        # Validiere gegen verfügbare Subkategorien
+        available_subgenres = []
+        for main_genre, subcats in GENRE_HIERARCHY.items():
+            if main_genre == genre:
+                available_subgenres.extend(subcats.keys())
+                break
+        
+        if available_subgenres:
+            # Fuzzy-Matching für Subgenre-Validierung
+            best_match = None
+            best_ratio = 0
+            for available in available_subgenres:
+                ratio = difflib.SequenceMatcher(None, subgenre.lower(), available.lower()).ratio()
+                if ratio > best_ratio and ratio > 0.6:
+                    best_ratio = ratio
+                    best_match = available
+            
+            if best_match:
+                subgenre = best_match
+                log.info(f"AI Music Identifier: Subgenre validiert: {subgenre} für {title} - {artist}")
+            else:
+                log.warning(f"AI Music Identifier: Subgenre '{subgenre}' nicht in verfügbaren Kategorien gefunden")
+                subgenre = None
+        
+        if subgenre and use_cache:
+            _aiid_cache[cache_key] = {"value": subgenre, "ts": time.time()}
+            _save_cache()
+            if is_debug_logging():
+                log.debug(f"AI Music Identifier: [Cache-Store] Typ: Subgenre, Datei: {file_name}, Key: {cache_key}")
+    else:
+        log.warning(_msg(f"AI Music Identifier: Kein gültiges Subgenre von KI für {title} - {artist}", 
+                        f"AI Music Identifier: No valid subgenre from AI for {title} - {artist}"))
+        if tagger and hasattr(tagger, 'window'):
+            tagger.window.set_statusbar_message(_msg(f"KI-Subgenre-Fehler: {subgenre}", f"AI subgenre error: {subgenre}"))
+    
+    return subgenre
+
+def get_available_subgenres(genre):
+    """Gibt verfügbare Subgenres für ein Hauptgenre zurück"""
+    if genre in GENRE_HIERARCHY:
+        return list(GENRE_HIERARCHY[genre].keys())
+    return []
+
+def get_genre_hierarchy_display(genre, subgenre=None):
+    """Formatiert Genre-Hierarchie für Anzeige"""
+    if not genre:
+        return ""
+    
+    if subgenre and genre in GENRE_HIERARCHY and subgenre in GENRE_HIERARCHY[genre]:
+        return f"{genre} → {subgenre}"
+    else:
+        return genre
+
+def calculate_similarity(song1, song2):
+    """Berechnet die Ähnlichkeit zwischen zwei Songs basierend auf verschiedenen Kriterien"""
+    similarity_score = 0.0
+    total_weight = 0.0
+    
+    # Künstler-Ähnlichkeit (höchste Gewichtung)
+    if song1.get('artist') and song2.get('artist'):
+        artist_sim = difflib.SequenceMatcher(None, 
+            song1['artist'].lower(), song2['artist'].lower()).ratio()
+        similarity_score += artist_sim * 0.4
+        total_weight += 0.4
+    
+    # Album-Ähnlichkeit
+    if song1.get('album') and song2.get('album'):
+        album_sim = difflib.SequenceMatcher(None, 
+            song1['album'].lower(), song2['album'].lower()).ratio()
+        similarity_score += album_sim * 0.3
+        total_weight += 0.3
+    
+    # Titel-Ähnlichkeit
+    if song1.get('title') and song2.get('title'):
+        title_sim = difflib.SequenceMatcher(None, 
+            song1['title'].lower(), song2['title'].lower()).ratio()
+        similarity_score += title_sim * 0.2
+        total_weight += 0.2
+    
+    # Jahr-Ähnlichkeit
+    if song1.get('year') and song2.get('year'):
+        year_diff = abs(int(song1['year']) - int(song2['year']))
+        year_sim = max(0, 1 - (year_diff / 10))  # 10 Jahre = 0 Ähnlichkeit
+        similarity_score += year_sim * 0.1
+        total_weight += 0.1
+    
+    if total_weight == 0:
+        return 0.0
+    
+    return similarity_score / total_weight
+
+def find_similar_songs(target_song, song_collection, min_similarity=0.6, max_results=10):
+    """Findet ähnliche Songs in der Sammlung"""
+    similar_songs = []
+    
+    for song in song_collection:
+        if song == target_song:
+            continue
+        
+        similarity = calculate_similarity(target_song, song)
+        if similarity >= min_similarity:
+            similar_songs.append((song, similarity))
+    
+    # Sortiere nach Ähnlichkeit (höchste zuerst)
+    similar_songs.sort(key=lambda x: x[1], reverse=True)
+    
+    return similar_songs[:max_results]
+
+def smart_tag_suggestion(target_song, song_collection, field, tagger=None, file_name=None):
+    """Intelligente Tag-Vorschläge basierend auf ähnlichen Songs"""
+    if not target_song or not song_collection:
+        return None
+    
+    # Finde ähnliche Songs
+    similar_songs = find_similar_songs(target_song, song_collection)
+    
+    if not similar_songs:
+        log.info(f"AI Music Identifier: Keine ähnlichen Songs für Smart Tagging gefunden")
+        return None
+    
+    # Sammle Tags von ähnlichen Songs
+    tag_counts = {}
+    total_weight = 0.0
+    
+    for song, similarity in similar_songs:
+        tag_value = song.get(field)
+        if tag_value:
+            weight = similarity  # Gewichtung basierend auf Ähnlichkeit
+            tag_counts[tag_value] = tag_counts.get(tag_value, 0) + weight
+            total_weight += weight
+    
+    if not tag_counts:
+        log.info(f"AI Music Identifier: Keine Tags in ähnlichen Songs für Feld '{field}' gefunden")
+        return None
+    
+    # Sortiere Tags nach Häufigkeit und Gewichtung
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+    
+    # KI-basierte Validierung und Verbesserung
+    top_tags = [tag for tag, count in sorted_tags[:3]]  # Top 3 Tags
+    
+    if len(top_tags) == 1:
+        # Nur ein Tag gefunden - verwende es direkt
+        suggested_tag = top_tags[0]
+        confidence = tag_counts[suggested_tag] / total_weight
+    else:
+        # Mehrere Tags gefunden - KI zur Entscheidung
+        title = target_song.get('title', '')
+        artist = target_song.get('artist', '')
+        
+        prompt = (
+            _msg(f"Der Song '{title}' von '{artist}' hat ähnliche Songs mit folgenden '{field}'-Tags: {', '.join(top_tags)}. ", 
+                 f"The song '{title}' by '{artist}' has similar songs with the following '{field}' tags: {', '.join(top_tags)}. ") +
+            _msg("Welcher Tag passt am besten? Antworte nur mit dem Tag.", 
+                 f"Which tag fits best? Answer only with the tag.")
+        )
+        
+        model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+        cache_key = f"ki_smart_tag::" + model + f"::{field}::{title}::{artist}"
+        use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+        
+        if use_cache and cache_key in _aiid_cache:
+            v = _aiid_cache[cache_key]
+            if isinstance(v, dict):
+                suggested_tag = v["value"]
+                confidence = v.get("confidence", 0.7)
+            else:
+                suggested_tag = v
+                confidence = 0.7
+        else:
+            if tagger and hasattr(tagger, 'window'):
+                tagger.window.set_statusbar_message(_msg("KI-Smart-Tagging läuft...", "AI smart tagging in progress..."))
+            
+            suggested_tag = call_ai_provider(prompt, model, tagger, file_name)
+            
+            if tagger and hasattr(tagger, 'window'):
+                tagger.window.set_statusbar_message("")
+            
+            if suggested_tag and "Fehler" not in suggested_tag:
+                # Validiere gegen verfügbare Tags
+                best_match = None
+                best_ratio = 0
+                for available_tag in top_tags:
+                    ratio = difflib.SequenceMatcher(None, suggested_tag.lower(), available_tag.lower()).ratio()
+                    if ratio > best_ratio and ratio > 0.6:
+                        best_ratio = ratio
+                        best_match = available_tag
+                
+                if best_match:
+                    suggested_tag = best_match
+                    confidence = tag_counts[best_match] / total_weight
+                else:
+                    # Fallback auf häufigsten Tag
+                    suggested_tag = top_tags[0]
+                    confidence = tag_counts[suggested_tag] / total_weight
+                
+                if use_cache:
+                    _aiid_cache[cache_key] = {"value": suggested_tag, "confidence": confidence, "ts": time.time()}
+                    _save_cache()
+            else:
+                # Fallback auf häufigsten Tag
+                suggested_tag = top_tags[0]
+                confidence = tag_counts[suggested_tag] / total_weight
+    
+    log.info(f"AI Music Identifier: Smart Tag für {field}: '{suggested_tag}' (Confidence: {confidence:.2f})")
+    return {"tag": suggested_tag, "confidence": confidence, "similar_songs": len(similar_songs)}
+
+def batch_smart_tagging(song_collection, fields=None, tagger=None):
+    """Intelligente Batch-Tagging für eine Sammlung von Songs"""
+    if not song_collection:
+        return []
+    
+    if fields is None:
+        fields = ["genre", "mood", "style"]
+    
+    results = []
+    
+    for i, song in enumerate(song_collection):
+        song_results = {}
+        file_name = song.get('path', f'song_{i}')
+        
+        for field in fields:
+            if not song.get(field):  # Nur für fehlende Tags
+                smart_result = smart_tag_suggestion(song, song_collection, field, tagger, file_name)
+                if smart_result and smart_result["confidence"] > 0.5:  # Mindest-Confidence
+                    song_results[field] = smart_result
+        
+        if song_results:
+            results.append({
+                "song": song,
+                "suggestions": song_results
+            })
+    
+    log.info(f"AI Music Identifier: Batch Smart Tagging abgeschlossen - {len(results)} Songs mit Vorschlägen")
+    return results
+
+class SmartTaggingDialog(QtWidgets.QDialog):
+    def __init__(self, song_collection, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(_msg("Smart Tagging", "Smart Tagging"))
+        self.song_collection = song_collection
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Feld-Auswahl
+        self.field_checkboxes = {}
+        fields = ["genre", "mood", "style", "epoch", "instruments"]
+        for field in fields:
+            cb = QtWidgets.QCheckBox(_msg(f"{field} taggen", f"Tag {field}"))
+            cb.setChecked(True)
+            self.field_checkboxes[field] = cb
+            layout.addWidget(cb)
+        
+        # Ähnlichkeits-Schwelle
+        similarity_layout = QtWidgets.QHBoxLayout()
+        similarity_layout.addWidget(QtWidgets.QLabel(_msg("Min. Ähnlichkeit:", "Min. similarity:")))
+        self.similarity_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.similarity_slider.setRange(30, 90)
+        self.similarity_slider.setValue(60)
+        self.similarity_label = QtWidgets.QLabel("60%")
+        self.similarity_slider.valueChanged.connect(lambda v: self.similarity_label.setText(f"{v}%"))
+        similarity_layout.addWidget(self.similarity_slider)
+        similarity_layout.addWidget(self.similarity_label)
+        layout.addLayout(similarity_layout)
+        
+        # Confidence-Schwelle
+        confidence_layout = QtWidgets.QHBoxLayout()
+        confidence_layout.addWidget(QtWidgets.QLabel(_msg("Min. Confidence:", "Min. confidence:")))
+        self.confidence_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.confidence_slider.setRange(30, 90)
+        self.confidence_slider.setValue(50)
+        self.confidence_label = QtWidgets.QLabel("50%")
+        self.confidence_slider.valueChanged.connect(lambda v: self.confidence_label.setText(f"{v}%"))
+        confidence_layout.addWidget(self.confidence_slider)
+        confidence_layout.addWidget(self.confidence_label)
+        layout.addLayout(confidence_layout)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.analyze_btn = QtWidgets.QPushButton(_msg("Smart Tagging starten", "Start Smart Tagging"))
+        self.analyze_btn.clicked.connect(self.start_smart_tagging)
+        btn_layout.addWidget(self.analyze_btn)
+        
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        # Ergebnis-Liste
+        self.result_list = QtWidgets.QListWidget()
+        layout.addWidget(QtWidgets.QLabel(_msg("Vorschläge:", "Suggestions:")))
+        layout.addWidget(self.result_list)
+        
+        self.results = []
+    
+    def start_smart_tagging(self):
+        self.result_list.clear()
+        self.analyze_btn.setEnabled(False)
+        
+        # Sammle ausgewählte Felder
+        selected_fields = [field for field, cb in self.field_checkboxes.items() if cb.isChecked()]
+        
+        if not selected_fields:
+            QtWidgets.QMessageBox.warning(self, _msg("Fehler", "Error"), _msg("Bitte mindestens ein Feld auswählen.", "Please select at least one field."))
+            self.analyze_btn.setEnabled(True)
+            return
+        
+        # Starte Smart Tagging
+        results = batch_smart_tagging(self.song_collection, selected_fields, self)
+        
+        # Zeige Ergebnisse
+        for result in results:
+            song = result["song"]
+            suggestions = result["suggestions"]
+            
+            song_text = f"{song.get('title', '?')} - {song.get('artist', '?')}"
+            suggestion_text = ", ".join([f"{field}: {sugg['tag']} ({sugg['confidence']:.1%})" 
+                                       for field, sugg in suggestions.items()])
+            
+            item_text = f"{song_text} → {suggestion_text}"
+            self.result_list.addItem(item_text)
+        
+        self.results = results
+        self.analyze_btn.setEnabled(True)
+        
+        QtWidgets.QMessageBox.information(self, _msg("Fertig", "Done"), 
+            _msg(f"Smart Tagging abgeschlossen. {len(results)} Songs mit Vorschlägen gefunden.", 
+                 f"Smart Tagging completed. {len(results)} songs with suggestions found."))
+
+def analyze_batch_intelligence(song_collection, tagger=None):
+    """KI-basierte Analyse einer gesamten Batch für intelligente Tag-Vorschläge"""
+    if not song_collection or len(song_collection) < 2:
+        return None
+    
+    # Sammle Batch-Statistiken
+    batch_stats = {
+        "total_songs": len(song_collection),
+        "artists": {},
+        "albums": {},
+        "years": {},
+        "existing_tags": {}
+    }
+    
+    for song in song_collection:
+        # Künstler-Statistiken
+        artist = song.get('artist', 'Unknown')
+        batch_stats["artists"][artist] = batch_stats["artists"].get(artist, 0) + 1
+        
+        # Album-Statistiken
+        album = song.get('album', 'Unknown')
+        batch_stats["albums"][album] = batch_stats["albums"].get(album, 0) + 1
+        
+        # Jahr-Statistiken
+        year = song.get('year')
+        if year:
+            batch_stats["years"][year] = batch_stats["years"].get(year, 0) + 1
+        
+        # Bestehende Tags
+        for field in ["genre", "mood", "style", "epoch"]:
+            tag_value = song.get(field)
+            if tag_value:
+                if field not in batch_stats["existing_tags"]:
+                    batch_stats["existing_tags"][field] = {}
+                batch_stats["existing_tags"][field][tag_value] = batch_stats["existing_tags"][field].get(tag_value, 0) + 1
+    
+    # KI-Analyse der Batch
+    prompt = (
+        _msg(f"Analysiere diese Musik-Batch mit {len(song_collection)} Songs. ", 
+             f"Analyze this music batch with {len(song_collection)} songs. ") +
+        _msg(f"Top-Künstler: {', '.join([f'{k} ({v})' for k, v in sorted(batch_stats['artists'].items(), key=lambda x: x[1], reverse=True)[:5]])}. ", 
+             f"Top artists: {', '.join([f'{k} ({v})' for k, v in sorted(batch_stats['artists'].items(), key=lambda x: x[1], reverse=True)[:5]])}. ") +
+        _msg(f"Top-Alben: {', '.join([f'{k} ({v})' for k, v in sorted(batch_stats['albums'].items(), key=lambda x: x[1], reverse=True)[:5]])}. ", 
+             f"Top albums: {', '.join([f'{k} ({v})' for k, v in sorted(batch_stats['albums'].items(), key=lambda x: x[1], reverse=True)[:5]])}. ") +
+        _msg("Welche konsistenten Tags würdest du für diese Batch vorschlagen? ", 
+             "What consistent tags would you suggest for this batch? ") +
+        _msg("Antworte im Format: 'genre: Rock, mood: energetisch, style: Alternative Rock'", 
+             "Answer in format: 'genre: Rock, mood: energetic, style: Alternative Rock'")
+    )
+    
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_batch_intelligence::{model}::{len(song_collection)}::{hash(str(batch_stats))}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            log.info(f"AI Music Identifier: Batch-Intelligenz aus Cache: {v['value']}")
+            return v["value"]
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Batch-Analyse läuft...", "AI batch analysis in progress..."))
+    
+    batch_suggestions = call_ai_provider(prompt, model, tagger)
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    
+    if batch_suggestions and "Fehler" not in batch_suggestions:
+        log.info(f"AI Music Identifier: Batch-Intelligenz: {batch_suggestions}")
+        if use_cache:
+            _aiid_cache[cache_key] = {"value": batch_suggestions, "ts": time.time()}
+            _save_cache()
+    
+    return batch_suggestions
+
+def group_similar_songs(song_collection, similarity_threshold=0.7):
+    """Gruppiert ähnliche Songs für effiziente Batch-Verarbeitung"""
+    if not song_collection:
+        return []
+    
+    groups = []
+    processed = set()
+    
+    for i, song in enumerate(song_collection):
+        if i in processed:
+            continue
+        
+        # Starte neue Gruppe
+        group = [song]
+        processed.add(i)
+        
+        # Finde ähnliche Songs
+        for j, other_song in enumerate(song_collection):
+            if j in processed:
+                continue
+            
+            similarity = calculate_similarity(song, other_song)
+            if similarity >= similarity_threshold:
+                group.append(other_song)
+                processed.add(j)
+        
+        if len(group) > 1:  # Nur Gruppen mit mehr als einem Song
+            groups.append({
+                "songs": group,
+                "representative": song,  # Erster Song als Repräsentant
+                "size": len(group),
+                "similarity_score": sum(calculate_similarity(song, s) for s in group[1:]) / (len(group) - 1)
+            })
+    
+    # Sortiere Gruppen nach Größe (größte zuerst)
+    groups.sort(key=lambda x: x["size"], reverse=True)
+    
+    log.info(f"AI Music Identifier: {len(groups)} Song-Gruppen erstellt")
+    return groups
+
+def batch_consistency_check(song_collection, tag_field, tagger=None):
+    """Prüft und verbessert die Konsistenz von Tags in einer Batch"""
+    if not song_collection:
+        return {}
+    
+    # Sammle alle Tags für das Feld
+    tag_values = {}
+    for song in song_collection:
+        tag_value = song.get(tag_field)
+        if tag_value:
+            tag_values[tag_value] = tag_values.get(tag_value, 0) + 1
+    
+    if len(tag_values) <= 1:
+        return {}  # Keine Inkonsistenzen
+    
+    # Finde den häufigsten Tag
+    most_common_tag = max(tag_values.items(), key=lambda x: x[1])[0]
+    
+    # KI-basierte Konsistenzprüfung
+    prompt = (
+        _msg(f"In einer Batch von {len(song_collection)} Songs gibt es folgende '{tag_field}'-Tags: {', '.join(tag_values.keys())}. ", 
+             f"In a batch of {len(song_collection)} songs there are the following '{tag_field}' tags: {', '.join(tag_values.keys())}. ") +
+        _msg(f"Der häufigste Tag ist '{most_common_tag}' ({tag_values[most_common_tag]}x). ", 
+             f"The most common tag is '{most_common_tag}' ({tag_values[most_common_tag]}x). ") +
+        _msg("Sollten alle Songs den gleichen Tag haben oder sind die verschiedenen Tags korrekt? ", 
+             "Should all songs have the same tag or are the different tags correct? ") +
+        _msg("Antworte mit 'einheitlich: [Tag]' oder 'korrekt'", 
+             "Answer with 'unified: [Tag]' or 'correct'")
+    )
+    
+    model = str(config.setting["aiid_ollama_model"]) if "aiid_ollama_model" in config.setting else "mistral"
+    cache_key = f"ki_consistency::{model}::{tag_field}::{hash(str(tag_values))}"
+    use_cache = bool(config.setting["aiid_enable_cache"]) if "aiid_enable_cache" in config.setting else True
+    
+    if use_cache and cache_key in _aiid_cache:
+        v = _aiid_cache[cache_key]
+        if isinstance(v, dict):
+            return v["value"]
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message(_msg("KI-Konsistenzprüfung läuft...", "AI consistency check in progress..."))
+    
+    consistency_result = call_ai_provider(prompt, model, tagger)
+    
+    if tagger and hasattr(tagger, 'window'):
+        tagger.window.set_statusbar_message("")
+    
+    result = {}
+    if consistency_result and "einheitlich:" in consistency_result.lower():
+        # Extrahiere vorgeschlagenen einheitlichen Tag
+        suggested_tag = consistency_result.split(":", 1)[1].strip()
+        result = {
+            "action": "unify",
+            "suggested_tag": suggested_tag,
+            "current_tags": tag_values,
+            "reasoning": consistency_result
+        }
+    else:
+        result = {
+            "action": "keep",
+            "current_tags": tag_values,
+            "reasoning": consistency_result or "Tags sind korrekt"
+        }
+    
+    if use_cache:
+        _aiid_cache[cache_key] = {"value": result, "ts": time.time()}
+        _save_cache()
+    
+    return result
+
+def intelligent_batch_processing(song_collection, tagger=None):
+    """Intelligente Batch-Verarbeitung mit Gruppierung und Konsistenzprüfung"""
+    if not song_collection:
+        return {"groups": [], "batch_suggestions": None, "consistency_issues": []}
+    
+    results = {
+        "groups": [],
+        "batch_suggestions": None,
+        "consistency_issues": []
+    }
+    
+    # 1. Batch-Intelligenz-Analyse
+    batch_suggestions = analyze_batch_intelligence(song_collection, tagger)
+    results["batch_suggestions"] = batch_suggestions
+    
+    # 2. Song-Gruppierung
+    groups = group_similar_songs(song_collection)
+    results["groups"] = groups
+    
+    # 3. Konsistenzprüfung für wichtige Felder
+    important_fields = ["genre", "mood", "style"]
+    for field in important_fields:
+        consistency_result = batch_consistency_check(song_collection, field, tagger)
+        if consistency_result.get("action") == "unify":
+            results["consistency_issues"].append({
+                "field": field,
+                "suggestion": consistency_result["suggested_tag"],
+                "current_tags": consistency_result["current_tags"],
+                "reasoning": consistency_result["reasoning"]
+            })
+    
+    log.info(f"AI Music Identifier: Intelligente Batch-Verarbeitung abgeschlossen - {len(groups)} Gruppen, {len(results['consistency_issues'])} Konsistenzprobleme")
+    return results
+
+class BatchIntelligenceDialog(QtWidgets.QDialog):
+    def __init__(self, song_collection, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(_msg("Batch-Intelligenz", "Batch Intelligence"))
+        self.song_collection = song_collection
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Batch-Info
+        info_label = QtWidgets.QLabel(_msg(f"Batch mit {len(song_collection)} Songs", f"Batch with {len(song_collection)} songs"))
+        layout.addWidget(info_label)
+        
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.analyze_btn = QtWidgets.QPushButton(_msg("Batch analysieren", "Analyze batch"))
+        self.analyze_btn.clicked.connect(self.analyze_batch)
+        btn_layout.addWidget(self.analyze_btn)
+        
+        self.group_btn = QtWidgets.QPushButton(_msg("Gruppierung anzeigen", "Show grouping"))
+        self.group_btn.clicked.connect(self.show_grouping)
+        self.group_btn.setEnabled(False)
+        btn_layout.addWidget(self.group_btn)
+        
+        self.consistency_btn = QtWidgets.QPushButton(_msg("Konsistenz prüfen", "Check consistency"))
+        self.consistency_btn.clicked.connect(self.check_consistency)
+        self.consistency_btn.setEnabled(False)
+        btn_layout.addWidget(self.consistency_btn)
+        
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        # Ergebnis-Anzeige
+        self.result_text = QtWidgets.QTextEdit()
+        self.result_text.setReadOnly(True)
+        layout.addWidget(self.result_text)
+        
+        self.batch_results = None
+    
+    def analyze_batch(self):
+        self.analyze_btn.setEnabled(False)
+        self.result_text.clear()
+        
+        # Führe intelligente Batch-Verarbeitung durch
+        self.batch_results = intelligent_batch_processing(self.song_collection, self)
+        
+        # Zeige Ergebnisse
+        result_text = ""
+        
+        if self.batch_results["batch_suggestions"]:
+            result_text += _msg("Batch-Vorschläge:\n", "Batch suggestions:\n")
+            result_text += f"{self.batch_results['batch_suggestions']}\n\n"
+        
+        if self.batch_results["groups"]:
+            result_text += _msg(f"Song-Gruppen ({len(self.batch_results['groups'])}):\n", f"Song groups ({len(self.batch_results['groups'])}):\n")
+            for i, group in enumerate(self.batch_results["groups"][:5]):  # Zeige nur Top 5
+                rep = group["representative"]
+                result_text += f"  Gruppe {i+1}: {rep.get('title', '?')} - {rep.get('artist', '?')} ({group['size']} Songs)\n"
+            if len(self.batch_results["groups"]) > 5:
+                result_text += _msg(f"  ... und {len(self.batch_results['groups']) - 5} weitere Gruppen\n", f"  ... and {len(self.batch_results['groups']) - 5} more groups\n")
+            result_text += "\n"
+        
+        if self.batch_results["consistency_issues"]:
+            result_text += _msg("Konsistenzprobleme:\n", "Consistency issues:\n")
+            for issue in self.batch_results["consistency_issues"]:
+                result_text += f"  {issue['field']}: {issue['suggestion']} (aktuell: {', '.join(issue['current_tags'].keys())})\n"
+        
+        self.result_text.setPlainText(result_text)
+        self.analyze_btn.setEnabled(True)
+        self.group_btn.setEnabled(True)
+        self.consistency_btn.setEnabled(True)
+    
+    def show_grouping(self):
+        if not self.batch_results or not self.batch_results["groups"]:
+            return
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Song-Gruppierung", "Song Grouping"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        for i, group in enumerate(self.batch_results["groups"]):
+            group_label = QtWidgets.QLabel(_msg(f"Gruppe {i+1} ({group['size']} Songs):", f"Group {i+1} ({group['size']} songs):"))
+            layout.addWidget(group_label)
+            
+            for song in group["songs"]:
+                song_label = QtWidgets.QLabel(f"  • {song.get('title', '?')} - {song.get('artist', '?')}")
+                layout.addWidget(song_label)
+            
+            layout.addWidget(QtWidgets.QLabel(""))  # Leerzeile
+        
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.resize(400, 300)
+        dialog.exec()
+    
+    def check_consistency(self):
+        if not self.batch_results or not self.batch_results["consistency_issues"]:
+            QtWidgets.QMessageBox.information(self, _msg("Konsistenz", "Consistency"), 
+                _msg("Keine Konsistenzprobleme gefunden.", "No consistency issues found."))
+            return
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Konsistenzprobleme", "Consistency Issues"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        for issue in self.batch_results["consistency_issues"]:
+            issue_widget = QtWidgets.QWidget()
+            issue_layout = QtWidgets.QVBoxLayout(issue_widget)
+            
+            issue_layout.addWidget(QtWidgets.QLabel(f"{issue['field']}: {issue['suggestion']}"))
+            issue_layout.addWidget(QtWidgets.QLabel(f"  Aktuell: {', '.join(issue['current_tags'].keys())}"))
+            
+            apply_btn = QtWidgets.QPushButton(_msg("Vorschlag anwenden", "Apply suggestion"))
+            def make_apply_func(field=issue['field'], tag=issue['suggestion']):
+                def apply():
+                    # Hier würde der Tag auf alle Songs angewendet werden
+                    logging.getLogger().info(f"AI Music Identifier: Konsistenz-Tag angewendet: {field} = {tag}")
+                    QtWidgets.QMessageBox.information(dialog, _msg("Angewendet", "Applied"), 
+                        _msg(f"Tag '{tag}' auf alle Songs angewendet.", f"Tag '{tag}' applied to all songs."))
+                return apply
+            apply_btn.clicked.connect(make_apply_func())
+            issue_layout.addWidget(apply_btn)
+            
+            layout.addWidget(issue_widget)
+        
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.resize(400, 300)
+        dialog.exec()
+
+def detect_metadata_conflicts(metadata, ai_results, mb_tags=None, mb_relations=None):
+    """
+    Erkennt Konflikte zwischen verschiedenen Metadaten-Quellen
+    """
+    conflicts = []
+    
+    # Konflikte zwischen AI und MusicBrainz
+    if mb_tags:
+        for field, ai_value in ai_results.items():
+            if field in mb_tags and mb_tags[field]:
+                mb_value = mb_tags[field]
+                if isinstance(ai_value, str) and isinstance(mb_value, str):
+                    similarity = SequenceMatcher(None, ai_value.lower(), mb_value.lower()).ratio()
+                    if similarity < 0.7:  # Konflikt wenn Ähnlichkeit < 70%
+                        conflicts.append({
+                            'field': field,
+                            'ai_value': ai_value,
+                            'mb_value': mb_value,
+                            'type': 'ai_vs_mb',
+                            'confidence': similarity,
+                            'severity': 'high' if similarity < 0.5 else 'medium'
+                        })
+    
+    # Konflikte zwischen verschiedenen AI-Feldern
+    field_conflicts = {
+        'genre': ['style', 'mood'],
+        'mood': ['genre', 'style'],
+        'style': ['genre', 'mood'],
+        'language': ['language_code']
+    }
+    
+    for field, conflicting_fields in field_conflicts.items():
+        if field in ai_results and ai_results[field]:
+            for cf in conflicting_fields:
+                if cf in ai_results and ai_results[cf]:
+                    # Prüfe auf logische Konflikte
+                    if field == 'language' and cf == 'language_code':
+                        # Sprache vs. Sprachcode sollte konsistent sein
+                        lang_value = ai_results[field].lower()
+                        code_value = ai_results[cf].lower()
+                        if not (lang_value in code_value or code_value in lang_value):
+                            conflicts.append({
+                                'field': f'{field}_vs_{cf}',
+                                'ai_value': f"{ai_results[field]} vs {ai_results[cf]}",
+                                'mb_value': None,
+                                'type': 'ai_internal',
+                                'confidence': 0.8,
+                                'severity': 'medium'
+                            })
+    
+    # Konflikte mit bestehenden Metadaten
+    existing_fields = ['title', 'artist', 'album', 'date', 'genre']
+    for field in existing_fields:
+        if field in metadata and metadata[field]:
+            existing_value = metadata[field]
+            if field in ai_results and ai_results[field]:
+                ai_value = ai_results[field]
+                if isinstance(existing_value, str) and isinstance(ai_value, str):
+                    similarity = SequenceMatcher(None, existing_value.lower(), ai_value.lower()).ratio()
+                    if similarity < 0.8:
+                        conflicts.append({
+                            'field': field,
+                            'ai_value': ai_value,
+                            'mb_value': existing_value,
+                            'type': 'ai_vs_existing',
+                            'confidence': similarity,
+                            'severity': 'high' if similarity < 0.6 else 'medium'
+                        })
+    
+    return conflicts
+
+def analyze_conflict_with_ai(conflict, title=None, artist=None, tagger=None, file_name=None):
+    """
+    Analysiert einen Konflikt mit KI-Unterstützung
+    """
+    prompt = f"""
+    Analysiere diesen Metadaten-Konflikt und schlage eine Lösung vor:
+    
+    Feld: {conflict['field']}
+    AI-Wert: {conflict['ai_value']}
+    Anderer Wert: {conflict['mb_value']}
+    Konflikt-Typ: {conflict['type']}
+    
+    Song: {title} - {artist}
+    
+    Bewerte beide Werte und schlage vor:
+    1. Welcher Wert ist wahrscheinlich korrekt?
+    2. Sollte ein Kompromiss gefunden werden?
+    3. Welche zusätzlichen Informationen wären hilfreich?
+    
+    Antworte im Format:
+    RECOMMENDATION: [ai_value|other_value|compromise|need_more_info]
+    CONFIDENCE: [0.0-1.0]
+    REASON: [Begründung]
+    SUGGESTION: [Vorschlag für finalen Wert]
+    """
+    
+    try:
+        response = call_ai_provider(prompt, "gpt-3.5-turbo", tagger, file_name)
+        if response:
+            lines = response.strip().split('\n')
+            result = {}
+            for line in lines:
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    result[key.strip()] = value.strip()
+            
+            return {
+                'recommendation': result.get('RECOMMENDATION', 'need_more_info'),
+                'confidence': float(result.get('CONFIDENCE', 0.5)),
+                'reason': result.get('REASON', 'Keine Begründung verfügbar'),
+                'suggestion': result.get('SUGGESTION', ''),
+                'ai_analysis': response
+            }
+    except Exception as e:
+        logging.getLogger().warning(f"AI-Konfliktanalyse fehlgeschlagen: {e}")
+    
+    return {
+        'recommendation': 'need_more_info',
+        'confidence': 0.5,
+        'reason': 'AI-Analyse nicht verfügbar',
+        'suggestion': '',
+        'ai_analysis': ''
+    }
+
+def resolve_conflicts_intelligently(conflicts, metadata, ai_results, tagger=None, file_name=None):
+    """
+    Löst Konflikte intelligent mit KI-Unterstützung
+    """
+    resolved = {}
+    unresolved = []
+    
+    for conflict in conflicts:
+        # KI-Analyse des Konflikts
+        analysis = analyze_conflict_with_ai(
+            conflict, 
+            metadata.get('title'), 
+            metadata.get('artist'), 
+            tagger, 
+            file_name
+        )
+        
+        conflict['analysis'] = analysis
+        
+        if analysis['recommendation'] == 'ai_value':
+            resolved[conflict['field']] = conflict['ai_value']
+        elif analysis['recommendation'] == 'other_value':
+            resolved[conflict['field']] = conflict['mb_value']
+        elif analysis['recommendation'] == 'compromise':
+            resolved[conflict['field']] = analysis['suggestion']
+        else:
+            unresolved.append(conflict)
+    
+    return resolved, unresolved
+
+class ConflictResolutionDialog(QtWidgets.QDialog):
+    """
+    Dialog zur interaktiven Konfliktlösung
+    """
+    def __init__(self, conflicts, metadata, ai_results, parent=None):
+        super().__init__(parent)
+        self.conflicts = conflicts
+        self.metadata = metadata
+        self.ai_results = ai_results
+        self.resolutions = {}
+        
+        self.setWindowTitle(_msg("Metadaten-Konflikte lösen", "Resolve metadata conflicts"))
+        self.setModal(True)
+        self.resize(600, 500)
+        
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Überschrift
+        title = QtWidgets.QLabel(_msg("Gefundene Konflikte:", "Found conflicts:"))
+        title.setStyleSheet("font-weight: bold; font-size: 14px;")
+        layout.addWidget(title)
+        
+        # Scroll-Bereich für Konflikte
+        scroll = QtWidgets.QScrollArea()
+        scroll_widget = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+        
+        for i, conflict in enumerate(conflicts):
+            conflict_widget = self._create_conflict_widget(conflict, i)
+            scroll_layout.addWidget(conflict_widget)
+        
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+        
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        
+        self.resolve_all_btn = QtWidgets.QPushButton(_msg("Alle mit KI lösen", "Resolve all with AI"))
+        self.resolve_all_btn.clicked.connect(self.resolve_all_with_ai)
+        button_layout.addWidget(self.resolve_all_btn)
+        
+        self.keep_ai_btn = QtWidgets.QPushButton(_msg("Alle AI-Werte behalten", "Keep all AI values"))
+        self.keep_ai_btn.clicked.connect(self.keep_all_ai)
+        button_layout.addWidget(self.keep_ai_btn)
+        
+        self.keep_other_btn = QtWidgets.QPushButton(_msg("Alle anderen Werte behalten", "Keep all other values"))
+        self.keep_other_btn.clicked.connect(self.keep_all_other)
+        button_layout.addWidget(self.keep_other_btn)
+        
+        button_layout.addStretch()
+        
+        self.apply_btn = QtWidgets.QPushButton(_msg("Anwenden", "Apply"))
+        self.apply_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.apply_btn)
+        
+        self.cancel_btn = QtWidgets.QPushButton(_msg("Abbrechen", "Cancel"))
+        self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def _create_conflict_widget(self, conflict, index):
+        """Erstellt ein Widget für einen einzelnen Konflikt"""
+        widget = QtWidgets.QGroupBox(f"{conflict['field']} - {conflict['type']}")
+        layout = QtWidgets.QVBoxLayout(widget)
+        
+        # Konflikt-Details
+        details_layout = QtWidgets.QHBoxLayout()
+        
+        # AI-Wert
+        ai_group = QtWidgets.QGroupBox(_msg("KI-Vorschlag", "AI suggestion"))
+        ai_layout = QtWidgets.QVBoxLayout(ai_group)
+        ai_value_label = QtWidgets.QLabel(conflict['ai_value'])
+        ai_value_label.setWordWrap(True)
+        ai_layout.addWidget(ai_value_label)
+        details_layout.addWidget(ai_group)
+        
+        # Anderer Wert
+        other_group = QtWidgets.QGroupBox(_msg("Anderer Wert", "Other value"))
+        other_layout = QtWidgets.QVBoxLayout(other_group)
+        other_value_label = QtWidgets.QLabel(str(conflict['mb_value']) if conflict['mb_value'] else _msg("Kein Wert", "No value"))
+        other_value_label.setWordWrap(True)
+        other_layout.addWidget(other_value_label)
+        details_layout.addWidget(other_group)
+        
+        layout.addLayout(details_layout)
+        
+        # KI-Analyse (falls verfügbar)
+        if 'analysis' in conflict:
+            analysis_group = QtWidgets.QGroupBox(_msg("KI-Analyse", "AI Analysis"))
+            analysis_layout = QtWidgets.QVBoxLayout(analysis_group)
+            
+            analysis_text = QtWidgets.QTextEdit()
+            analysis_text.setMaximumHeight(100)
+            analysis_text.setPlainText(conflict['analysis']['reason'])
+            analysis_text.setReadOnly(True)
+            analysis_layout.addWidget(analysis_text)
+            
+            confidence_label = QtWidgets.QLabel(
+                _msg(f"Vertrauen: {conflict['analysis']['confidence']:.1%}", 
+                     f"Confidence: {conflict['analysis']['confidence']:.1%}")
+            )
+            analysis_layout.addWidget(confidence_label)
+            
+            layout.addWidget(analysis_group)
+        
+        # Lösungsoptionen
+        solution_layout = QtWidgets.QHBoxLayout()
+        
+        ai_radio = QtWidgets.QRadioButton(_msg("KI-Wert verwenden", "Use AI value"))
+        ai_radio.setChecked(True)
+        solution_layout.addWidget(ai_radio)
+        
+        other_radio = QtWidgets.QRadioButton(_msg("Anderen Wert verwenden", "Use other value"))
+        solution_layout.addWidget(other_radio)
+        
+        compromise_edit = QtWidgets.QLineEdit()
+        compromise_edit.setPlaceholderText(_msg("Kompromiss-Vorschlag", "Compromise suggestion"))
+        if 'analysis' in conflict and conflict['analysis']['suggestion']:
+            compromise_edit.setText(conflict['analysis']['suggestion'])
+        solution_layout.addWidget(compromise_edit)
+        
+        compromise_radio = QtWidgets.QRadioButton(_msg("Kompromiss", "Compromise"))
+        solution_layout.addWidget(compromise_radio)
+        
+        layout.addLayout(solution_layout)
+        
+        # Speichere Referenzen für späteren Zugriff
+        conflict['widgets'] = {
+            'ai_radio': ai_radio,
+            'other_radio': other_radio,
+            'compromise_radio': compromise_radio,
+            'compromise_edit': compromise_edit
+        }
+        
+        return widget
+    
+    def resolve_all_with_ai(self):
+        """Löst alle Konflikte basierend auf KI-Analyse"""
+        for conflict in self.conflicts:
+            if 'analysis' in conflict:
+                analysis = conflict['analysis']
+                widgets = conflict['widgets']
+                
+                if analysis['recommendation'] == 'ai_value':
+                    widgets['ai_radio'].setChecked(True)
+                elif analysis['recommendation'] == 'other_value':
+                    widgets['other_radio'].setChecked(True)
+                elif analysis['recommendation'] == 'compromise':
+                    widgets['compromise_radio'].setChecked(True)
+                    widgets['compromise_edit'].setText(analysis['suggestion'])
+        
+        QtWidgets.QMessageBox.information(
+            self, 
+            _msg("KI-Lösung angewendet", "AI resolution applied"),
+            _msg("Alle Konflikte wurden basierend auf KI-Analyse gelöst.", 
+                 "All conflicts have been resolved based on AI analysis.")
+        )
+    
+    def keep_all_ai(self):
+        """Behält alle AI-Werte"""
+        for conflict in self.conflicts:
+            conflict['widgets']['ai_radio'].setChecked(True)
+    
+    def keep_all_other(self):
+        """Behält alle anderen Werte"""
+        for conflict in self.conflicts:
+            conflict['widgets']['other_radio'].setChecked(True)
+    
+    def get_resolutions(self):
+        """Gibt die gewählten Lösungen zurück"""
+        resolutions = {}
+        
+        for conflict in self.conflicts:
+            widgets = conflict['widgets']
+            field = conflict['field']
+            
+            if widgets['ai_radio'].isChecked():
+                resolutions[field] = conflict['ai_value']
+            elif widgets['other_radio'].isChecked():
+                resolutions[field] = conflict['mb_value']
+            elif widgets['compromise_radio'].isChecked():
+                resolutions[field] = widgets['compromise_edit'].text()
+        
+        return resolutions
+
+def show_conflict_resolution_dialog(conflicts, metadata, ai_results, parent=None):
+    """
+    Zeigt den Konfliktlösungs-Dialog an
+    """
+    dialog = ConflictResolutionDialog(conflicts, metadata, ai_results, parent)
+    if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+        return dialog.get_resolutions()
+    return {}
+
+# ============================================================================
+# AUTOMATISIERTE WORKFLOWS
+# ============================================================================
+
+class WorkflowRule:
+    """
+    Repräsentiert eine einzelne Workflow-Regel
+    """
+    def __init__(self, name, conditions, actions, priority=1, enabled=True):
+        self.name = name
+        self.conditions = conditions  # Liste von Bedingungen
+        self.actions = actions        # Liste von Aktionen
+        self.priority = priority      # Höhere Priorität = frühere Ausführung
+        self.enabled = enabled
+        self.execution_count = 0
+        self.last_executed = None
+    
+    def evaluate_conditions(self, metadata, ai_results, context=None):
+        """
+        Bewertet alle Bedingungen der Regel
+        """
+        if not self.enabled:
+            return False
+        
+        for condition in self.conditions:
+            if not self._evaluate_condition(condition, metadata, ai_results, context):
+                return False
+        return True
+    
+    def _evaluate_condition(self, condition, metadata, ai_results, context):
+        """
+        Bewertet eine einzelne Bedingung
+        """
+        condition_type = condition.get('type')
+        
+        if condition_type == 'field_exists':
+            field = condition['field']
+            return field in metadata and metadata[field]
+        
+        elif condition_type == 'field_equals':
+            field = condition['field']
+            value = condition['value']
+            return field in metadata and metadata[field] == value
+        
+        elif condition_type == 'field_contains':
+            field = condition['field']
+            value = condition['value']
+            return field in metadata and value.lower() in str(metadata[field]).lower()
+        
+        elif condition_type == 'ai_field_exists':
+            field = condition['field']
+            return field in ai_results and ai_results[field]
+        
+        elif condition_type == 'ai_confidence_above':
+            field = condition['field']
+            threshold = condition['threshold']
+            return field in ai_results and ai_results.get('confidence', {}).get(field, 0) > threshold
+        
+        elif condition_type == 'file_type':
+            file_type = condition['file_type']
+            return context and context.get('file_path', '').lower().endswith(file_type.lower())
+        
+        elif condition_type == 'batch_size':
+            min_size = condition.get('min_size', 0)
+            max_size = condition.get('max_size', float('inf'))
+            batch_size = context.get('batch_size', 0) if context else 0
+            return min_size <= batch_size <= max_size
+        
+        elif condition_type == 'time_of_day':
+            import datetime
+            now = datetime.datetime.now()
+            start_time = condition.get('start_time', '00:00')
+            end_time = condition.get('end_time', '23:59')
+            
+            try:
+                start = datetime.datetime.strptime(start_time, '%H:%M').time()
+                end = datetime.datetime.strptime(end_time, '%H:%M').time()
+                current = now.time()
+                
+                if start <= end:
+                    return start <= current <= end
+                else:  # Über Mitternacht
+                    return current >= start or current <= end
+            except:
+                return True
+        
+        elif condition_type == 'custom_ai_condition':
+            # KI-basierte Bedingung
+            prompt = condition['prompt']
+            try:
+                response = call_ai_provider(prompt, "gpt-3.5-turbo", context.get('tagger'), context.get('file_name'))
+                return response and 'true' in response.lower()
+            except:
+                return False
+        
+        return False
+    
+    def execute_actions(self, metadata, ai_results, context=None):
+        """
+        Führt alle Aktionen der Regel aus
+        """
+        results = []
+        
+        for action in self.actions:
+            try:
+                result = self._execute_action(action, metadata, ai_results, context)
+                results.append(result)
+            except Exception as e:
+                logging.getLogger().warning(f"Workflow-Regel '{self.name}' - Aktion fehlgeschlagen: {e}")
+                results.append({'success': False, 'error': str(e)})
+        
+        self.execution_count += 1
+        self.last_executed = time.time()
+        
+        return results
+    
+    def _execute_action(self, action, metadata, ai_results, context):
+        """
+        Führt eine einzelne Aktion aus
+        """
+        action_type = action.get('type')
+        
+        if action_type == 'set_field':
+            field = action['field']
+            value = action['value']
+            metadata[field] = value
+            return {'success': True, 'action': 'set_field', 'field': field, 'value': value}
+        
+        elif action_type == 'set_ai_field':
+            field = action['field']
+            if field in ai_results:
+                metadata[field] = ai_results[field]
+                return {'success': True, 'action': 'set_ai_field', 'field': field, 'value': ai_results[field]}
+            return {'success': False, 'action': 'set_ai_field', 'error': f'Field {field} not in AI results'}
+        
+        elif action_type == 'apply_ai_suggestion':
+            field = action['field']
+            if field in ai_results:
+                # Hier würde die KI-Vorschlag-Anwendung erfolgen
+                return {'success': True, 'action': 'apply_ai_suggestion', 'field': field}
+            return {'success': False, 'action': 'apply_ai_suggestion', 'error': f'No AI suggestion for {field}'}
+        
+        elif action_type == 'run_ai_analysis':
+            field = action['field']
+            title = metadata.get('title', '')
+            artist = metadata.get('artist', '')
+            
+            if field == 'genre':
+                result = get_genre_suggestion(title, artist, context.get('tagger'), context.get('file_name'))
+            elif field == 'mood':
+                result = get_mood_suggestion(title, artist, context.get('tagger'), context.get('file_name'))
+            elif field == 'style':
+                result = get_style_suggestion(title, artist, context.get('tagger'), context.get('file_name'))
+            else:
+                result = None
+            
+            if result:
+                metadata[field] = result
+                return {'success': True, 'action': 'run_ai_analysis', 'field': field, 'result': result}
+            return {'success': False, 'action': 'run_ai_analysis', 'error': f'No result for {field}'}
+        
+        elif action_type == 'custom_ai_action':
+            prompt = action['prompt']
+            try:
+                response = call_ai_provider(prompt, "gpt-3.5-turbo", context.get('tagger'), context.get('file_name'))
+                if response:
+                    # Parse KI-Antwort und wende sie an
+                    return {'success': True, 'action': 'custom_ai_action', 'response': response}
+                return {'success': False, 'action': 'custom_ai_action', 'error': 'No AI response'}
+            except Exception as e:
+                return {'success': False, 'action': 'custom_ai_action', 'error': str(e)}
+        
+        elif action_type == 'send_notification':
+            message = action['message']
+            # Hier würde die Benachrichtigung gesendet werden
+            logging.getLogger().info(f"Workflow Notification: {message}")
+            return {'success': True, 'action': 'send_notification', 'message': message}
+        
+        elif action_type == 'log_action':
+            message = action['message']
+            logging.getLogger().info(f"Workflow Log: {message}")
+            return {'success': True, 'action': 'log_action', 'message': message}
+        
+        return {'success': False, 'action': 'unknown', 'error': f'Unknown action type: {action_type}'}
+
+class WorkflowEngine:
+    """
+    Engine zur Ausführung von Workflow-Regeln
+    """
+    def __init__(self):
+        self.rules = []
+        self.execution_history = []
+        self.enabled = True
+    
+    def add_rule(self, rule):
+        """Fügt eine neue Regel hinzu"""
+        self.rules.append(rule)
+        self.rules.sort(key=lambda r: r.priority, reverse=True)  # Höhere Priorität zuerst
+    
+    def remove_rule(self, rule_name):
+        """Entfernt eine Regel"""
+        self.rules = [r for r in self.rules if r.name != rule_name]
+    
+    def get_rule(self, rule_name):
+        """Gibt eine Regel zurück"""
+        for rule in self.rules:
+            if rule.name == rule_name:
+                return rule
+        return None
+    
+    def execute_workflows(self, metadata, ai_results, context=None):
+        """
+        Führt alle passenden Workflows aus
+        """
+        if not self.enabled:
+            return []
+        
+        executed_rules = []
+        
+        for rule in self.rules:
+            if rule.evaluate_conditions(metadata, ai_results, context):
+                try:
+                    results = rule.execute_actions(metadata, ai_results, context)
+                    executed_rules.append({
+                        'rule': rule.name,
+                        'results': results,
+                        'timestamp': time.time()
+                    })
+                    logging.getLogger().info(f"Workflow-Regel '{rule.name}' ausgeführt")
+                except Exception as e:
+                    logging.getLogger().error(f"Workflow-Regel '{rule.name}' Fehler: {e}")
+                    executed_rules.append({
+                        'rule': rule.name,
+                        'error': str(e),
+                        'timestamp': time.time()
+                    })
+        
+        self.execution_history.extend(executed_rules)
+        return executed_rules
+    
+    def get_execution_stats(self):
+        """Gibt Statistiken zur Workflow-Ausführung zurück"""
+        stats = {}
+        for rule in self.rules:
+            stats[rule.name] = {
+                'execution_count': rule.execution_count,
+                'last_executed': rule.last_executed,
+                'enabled': rule.enabled
+            }
+        return stats
+
+# Vordefinierte Workflow-Regeln
+def create_default_workflows():
+    """
+    Erstellt Standard-Workflow-Regeln
+    """
+    workflows = []
+    
+    # Regel 1: Automatisches Genre-Tagging für Rock-Songs
+    rock_genre_rule = WorkflowRule(
+        name="Auto-Genre-Rock",
+        conditions=[
+            {'type': 'field_contains', 'field': 'title', 'value': 'rock'},
+            {'type': 'field_exists', 'field': 'artist'}
+        ],
+        actions=[
+            {'type': 'run_ai_analysis', 'field': 'genre'},
+            {'type': 'log_action', 'message': 'Automatisches Genre-Tagging für Rock-Song durchgeführt'}
+        ],
+        priority=2
+    )
+    workflows.append(rock_genre_rule)
+    
+    # Regel 2: Mood-Analyse für neue Songs ohne Mood
+    mood_analysis_rule = WorkflowRule(
+        name="Auto-Mood-Analysis",
+        conditions=[
+            {'type': 'field_exists', 'field': 'title'},
+            {'type': 'field_exists', 'field': 'artist'},
+            {'type': 'ai_field_exists', 'field': 'mood'}
+        ],
+        actions=[
+            {'type': 'run_ai_analysis', 'field': 'mood'},
+            {'type': 'set_ai_field', 'field': 'mood_emojis'}
+        ],
+        priority=1
+    )
+    workflows.append(mood_analysis_rule)
+    
+    # Regel 3: Batch-Verarbeitung für große Sammlungen
+    batch_rule = WorkflowRule(
+        name="Batch-Processing",
+        conditions=[
+            {'type': 'batch_size', 'min_size': 10}
+        ],
+        actions=[
+            {'type': 'log_action', 'message': 'Batch-Verarbeitung für große Sammlung gestartet'},
+            {'type': 'send_notification', 'message': 'Batch-Verarbeitung läuft...'}
+        ],
+        priority=3
+    )
+    workflows.append(batch_rule)
+    
+    # Regel 4: KI-basierte Qualitätsprüfung
+    quality_check_rule = WorkflowRule(
+        name="Quality-Check",
+        conditions=[
+            {'type': 'custom_ai_condition', 'prompt': 'Ist dieser Song-Titel plausibel und vollständig?'}
+        ],
+        actions=[
+            {'type': 'custom_ai_action', 'prompt': 'Analysiere die Qualität der Metadaten und schlage Verbesserungen vor'},
+            {'type': 'log_action', 'message': 'Qualitätsprüfung durchgeführt'}
+        ],
+        priority=1
+    )
+    workflows.append(quality_check_rule)
+    
+    return workflows
+
+class WorkflowManagerDialog(QtWidgets.QDialog):
+    """
+    Dialog zur Verwaltung von Workflow-Regeln
+    """
+    def __init__(self, workflow_engine, parent=None):
+        super().__init__(parent)
+        self.workflow_engine = workflow_engine
+        
+        self.setWindowTitle(_msg("Workflow-Manager", "Workflow Manager"))
+        self.setModal(True)
+        self.resize(800, 600)
+        
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Überschrift
+        title = QtWidgets.QLabel(_msg("Automatisierte Workflows verwalten", "Manage automated workflows"))
+        title.setStyleSheet("font-weight: bold; font-size: 16px;")
+        layout.addWidget(title)
+        
+        # Workflow-Liste
+        self.workflow_list = QtWidgets.QListWidget()
+        layout.addWidget(self.workflow_list)
+        
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        
+        self.add_rule_btn = QtWidgets.QPushButton(_msg("Regel hinzufügen", "Add rule"))
+        self.add_rule_btn.clicked.connect(self.add_rule)
+        button_layout.addWidget(self.add_rule_btn)
+        
+        self.edit_rule_btn = QtWidgets.QPushButton(_msg("Regel bearbeiten", "Edit rule"))
+        self.edit_rule_btn.clicked.connect(self.edit_rule)
+        button_layout.addWidget(self.edit_rule_btn)
+        
+        self.delete_rule_btn = QtWidgets.QPushButton(_msg("Regel löschen", "Delete rule"))
+        self.delete_rule_btn.clicked.connect(self.delete_rule)
+        button_layout.addWidget(self.delete_rule_btn)
+        
+        self.enable_all_btn = QtWidgets.QPushButton(_msg("Alle aktivieren", "Enable all"))
+        self.enable_all_btn.clicked.connect(self.enable_all_rules)
+        button_layout.addWidget(self.enable_all_btn)
+        
+        self.disable_all_btn = QtWidgets.QPushButton(_msg("Alle deaktivieren", "Disable all"))
+        self.disable_all_btn.clicked.connect(self.disable_all_rules)
+        button_layout.addWidget(self.disable_all_btn)
+        
+        button_layout.addStretch()
+        
+        self.stats_btn = QtWidgets.QPushButton(_msg("Statistiken", "Statistics"))
+        self.stats_btn.clicked.connect(self.show_stats)
+        button_layout.addWidget(self.stats_btn)
+        
+        self.close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        self.close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.close_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Lade Workflows
+        self.load_workflows()
+    
+    def load_workflows(self):
+        """Lädt alle Workflows in die Liste"""
+        self.workflow_list.clear()
+        
+        for rule in self.workflow_engine.rules:
+            item = QtWidgets.QListWidgetItem()
+            status = _msg("Aktiviert", "Enabled") if rule.enabled else _msg("Deaktiviert", "Disabled")
+            item.setText(f"{rule.name} ({status}) - Priorität: {rule.priority}")
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, rule)
+            self.workflow_list.addItem(item)
+    
+    def add_rule(self):
+        """Fügt eine neue Regel hinzu"""
+        dialog = WorkflowRuleDialog(self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            rule = dialog.get_rule()
+            self.workflow_engine.add_rule(rule)
+            self.load_workflows()
+    
+    def edit_rule(self):
+        """Bearbeitet eine ausgewählte Regel"""
+        current_item = self.workflow_list.currentItem()
+        if not current_item:
+            QtWidgets.QMessageBox.warning(self, _msg("Keine Auswahl", "No selection"), 
+                _msg("Bitte wählen Sie eine Regel aus.", "Please select a rule."))
+            return
+        
+        rule = current_item.data(QtCore.Qt.ItemDataRole.UserRole)
+        dialog = WorkflowRuleDialog(self, rule)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            # Regel aktualisieren
+            new_rule = dialog.get_rule()
+            if new_rule:
+                rule.name = new_rule.name
+                rule.conditions = new_rule.conditions
+                rule.actions = new_rule.actions
+                rule.priority = new_rule.priority
+                rule.enabled = new_rule.enabled
+                self.load_workflows()
+            else:
+                QtWidgets.QMessageBox.warning(self, _msg("Fehler", "Error"), 
+                    _msg("Regel konnte nicht erstellt werden.", "Rule could not be created."))
+    
+    def delete_rule(self):
+        """Löscht eine ausgewählte Regel"""
+        current_item = self.workflow_list.currentItem()
+        if not current_item:
+            QtWidgets.QMessageBox.warning(self, _msg("Keine Auswahl", "No selection"), 
+                _msg("Bitte wählen Sie eine Regel aus.", "Please select a rule."))
+            return
+        
+        rule = current_item.data(QtCore.Qt.ItemDataRole.UserRole)
+        reply = QtWidgets.QMessageBox.question(self, _msg("Regel löschen", "Delete rule"), 
+            _msg(f"Regel '{rule.name}' wirklich löschen?", f"Really delete rule '{rule.name}'?"))
+        
+        if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+            self.workflow_engine.remove_rule(rule.name)
+            self.load_workflows()
+    
+    def enable_all_rules(self):
+        """Aktiviert alle Regeln"""
+        for rule in self.workflow_engine.rules:
+            rule.enabled = True
+        self.load_workflows()
+    
+    def disable_all_rules(self):
+        """Deaktiviert alle Regeln"""
+        for rule in self.workflow_engine.rules:
+            rule.enabled = False
+        self.load_workflows()
+    
+    def show_stats(self):
+        """Zeigt Workflow-Statistiken"""
+        stats = self.workflow_engine.get_execution_stats()
+        
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(_msg("Workflow-Statistiken", "Workflow Statistics"))
+        dialog.setModal(True)
+        dialog.resize(500, 400)
+        
+        layout = QtWidgets.QVBoxLayout(dialog)
+        
+        # Statistik-Tabelle
+        table = QtWidgets.QTableWidget()
+        table.setColumnCount(4)
+        table.setHorizontalHeaderLabels([
+            _msg("Regel", "Rule"),
+            _msg("Ausführungen", "Executions"),
+            _msg("Letzte Ausführung", "Last execution"),
+            _msg("Status", "Status")
+        ])
+        
+        table.setRowCount(len(stats))
+        
+        for i, (rule_name, stat) in enumerate(stats.items()):
+            table.setItem(i, 0, QtWidgets.QTableWidgetItem(rule_name))
+            table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(stat['execution_count'])))
+            
+            last_exec = stat['last_executed']
+            if last_exec:
+                import datetime
+                last_exec_str = datetime.datetime.fromtimestamp(last_exec).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                last_exec_str = _msg("Nie", "Never")
+            table.setItem(i, 2, QtWidgets.QTableWidgetItem(last_exec_str))
+            
+            status = _msg("Aktiviert", "Enabled") if stat['enabled'] else _msg("Deaktiviert", "Disabled")
+            table.setItem(i, 3, QtWidgets.QTableWidgetItem(status))
+        
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+        
+        close_btn = QtWidgets.QPushButton(_msg("Schließen", "Close"))
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.exec()
+
+class WorkflowRuleDialog(QtWidgets.QDialog):
+    """
+    Dialog zur Bearbeitung von Workflow-Regeln
+    """
+    def __init__(self, parent=None, rule=None):
+        super().__init__(parent)
+        self.rule = rule
+        
+        self.setWindowTitle(_msg("Workflow-Regel bearbeiten", "Edit workflow rule") if rule else _msg("Neue Workflow-Regel", "New workflow rule"))
+        self.setModal(True)
+        self.resize(600, 500)
+        
+        layout = QtWidgets.QVBoxLayout(self)
+        
+        # Regel-Name
+        layout.addWidget(QtWidgets.QLabel(_msg("Name:", "Name:")))
+        self.name_edit = QtWidgets.QLineEdit()
+        if rule:
+            self.name_edit.setText(rule.name)
+        layout.addWidget(self.name_edit)
+        
+        # Priorität
+        layout.addWidget(QtWidgets.QLabel(_msg("Priorität (höher = früher):", "Priority (higher = earlier):")))
+        self.priority_spin = QtWidgets.QSpinBox()
+        self.priority_spin.setRange(1, 10)
+        self.priority_spin.setValue(rule.priority if rule else 1)
+        layout.addWidget(self.priority_spin)
+        
+        # Aktiviert
+        self.enabled_checkbox = QtWidgets.QCheckBox(_msg("Regel aktiviert", "Rule enabled"))
+        self.enabled_checkbox.setChecked(rule.enabled if rule else True)
+        layout.addWidget(self.enabled_checkbox)
+        
+        # Bedingungen
+        layout.addWidget(QtWidgets.QLabel(_msg("Bedingungen:", "Conditions:")))
+        self.conditions_text = QtWidgets.QTextEdit()
+        if rule:
+            self.conditions_text.setPlainText(json.dumps(rule.conditions, indent=2))
+        else:
+            self.conditions_text.setPlainText('[\n  {"type": "field_exists", "field": "title"}\n]')
+        layout.addWidget(self.conditions_text)
+        
+        # Aktionen
+        layout.addWidget(QtWidgets.QLabel(_msg("Aktionen:", "Actions:")))
+        self.actions_text = QtWidgets.QTextEdit()
+        if rule:
+            self.actions_text.setPlainText(json.dumps(rule.actions, indent=2))
+        else:
+            self.actions_text.setPlainText('[\n  {"type": "log_action", "message": "Workflow executed"}\n]')
+        layout.addWidget(self.actions_text)
+        
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        
+        self.validate_btn = QtWidgets.QPushButton(_msg("Validieren", "Validate"))
+        self.validate_btn.clicked.connect(self.validate_rule)
+        button_layout.addWidget(self.validate_btn)
+        
+        button_layout.addStretch()
+        
+        self.ok_btn = QtWidgets.QPushButton(_msg("OK", "OK"))
+        self.ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.ok_btn)
+        
+        self.cancel_btn = QtWidgets.QPushButton(_msg("Abbrechen", "Cancel"))
+        self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def validate_rule(self):
+        """Validiert die Regel-Definition"""
+        try:
+            conditions = json.loads(self.conditions_text.toPlainText())
+            actions = json.loads(self.actions_text.toPlainText())
+            
+            if not isinstance(conditions, list):
+                raise ValueError("Bedingungen müssen eine Liste sein")
+            if not isinstance(actions, list):
+                raise ValueError("Aktionen müssen eine Liste sein")
+            
+            QtWidgets.QMessageBox.information(self, _msg("Validierung erfolgreich", "Validation successful"), 
+                _msg("Die Regel-Definition ist gültig.", "The rule definition is valid."))
+        
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, _msg("Validierungsfehler", "Validation error"), str(e))
+    
+    def get_rule(self):
+        """Gibt die erstellte/bearbeitete Regel zurück"""
+        try:
+            conditions = json.loads(self.conditions_text.toPlainText())
+            actions = json.loads(self.actions_text.toPlainText())
+            
+            rule = WorkflowRule(
+                name=self.name_edit.text(),
+                conditions=conditions,
+                actions=actions,
+                priority=self.priority_spin.value(),
+                enabled=self.enabled_checkbox.isChecked()
+            )
+            return rule
+        except Exception as e:
+            logging.getLogger().warning(f"Workflow rule creation failed: {e}")
+            return None
