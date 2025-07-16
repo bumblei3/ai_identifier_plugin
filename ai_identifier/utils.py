@@ -1,14 +1,23 @@
 # Hilfsfunktionen für AI Music Identifier Plugin
 
+# pyright: reportMissingImports=false
 import difflib
 import locale
-import logging
+import logging as std_logging
 from PyQt6 import QtWidgets
 from .constants import VALID_GENRES, VALID_MOODS
+from typing import Any, Optional
+from . import logging
 
-def _msg(de, en):
+def _msg(de: str, en: Optional[str] = None) -> str:
+    """
+    Gibt die deutsche oder englische Version einer Nachricht zurück (je nach UI-Sprache).
+    :param de: Deutsche Nachricht
+    :param en: Englische Nachricht (optional)
+    :return: Nachricht in passender Sprache
+    """
     lang = locale.getdefaultlocale()[0]
-    return de if lang and lang.startswith("de") else en
+    return de if lang and lang.startswith("de") else en if en else de
 
 def validate_ki_value(field, value):
     if not value:
@@ -29,9 +38,13 @@ def validate_ki_value(field, value):
         return (False, value, matches[0])
     return (False, value, None)
 
-def show_error(tagger, message):
-    """Zeigt eine Fehlermeldung im Log und in der UI (Statusleiste und ggf. MessageBox) an."""
-    logging.getLogger().error(f"AI Music Identifier: {message}")
+def show_error(tagger: Any, message: str) -> None:
+    """
+    Zeigt eine Fehlermeldung im Log und ggf. in der UI an.
+    :param tagger: (optional) Picard-Tagger-Objekt
+    :param message: Fehlermeldung
+    """
+    std_logging.getLogger().error(f"AI Music Identifier: {message}")
     if tagger and hasattr(tagger, 'window'):
         tagger.window.set_statusbar_message(message)
         QtWidgets.QMessageBox.critical(tagger.window, "Fehler", message)

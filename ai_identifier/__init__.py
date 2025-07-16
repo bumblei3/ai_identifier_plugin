@@ -11,11 +11,12 @@ from .constants import *
 from .cache import load_cache, save_cache, get_cache
 from .ki import *
 from .worker import *
-from .ui import AIMusicIdentifierOptionsPage
 from .utils import *
 from .workflow import *
-
-from picard.extension_points.options_pages import register_options_page
-register_options_page(AIMusicIdentifierOptionsPage)
+from . import logging  # Initialisiert das eigene Logging-Setup
+import logging as std_logging
+logger = std_logging.getLogger("ai_identifier")
+logger.info("Test: ai_identifier Plugin wurde geladen und Logging initialisiert!")
+# Keine UI-Registrierung mehr nötig – reines Backend-Plugin
 
 # ... hier kann die Haupt-Plugin-Logik stehen, z.B. Event-Hooks, Initialisierung, etc. ...

@@ -1,8 +1,8 @@
 import requests
 from picard import config, log
-from ai_identifier.cache import get_cache, save_cache
+from .cache import get_cache, save_cache
 from PyQt6 import QtWidgets
-from ai_identifier.utils import is_debug_logging, _msg
+from .utils import is_debug_logging, _msg
 
 def call_huggingface(prompt, model, tagger=None, file_name=None):
     api_key = config.setting["aiid_hf_key"] if "aiid_hf_key" in config.setting else ""

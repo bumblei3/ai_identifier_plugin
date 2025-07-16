@@ -218,3 +218,15 @@ Dieses Plugin steht unter der MIT-Lizenz und kann frei verwendet, modifiziert un
 ---
 
 **Viel Spaß beim intelligenten Musik-Tagging mit KI-Unterstützung! 🎶🤖✨** 
+
+## Fehlerberichte & Logdatei
+
+Falls es zu Problemen mit dem Plugin kommt, kannst du die Logdatei ganz einfach exportieren oder öffnen:
+
+- **Logdatei exportieren:**  
+  Öffne die Plugin-Einstellungen und klicke auf „Logdatei exportieren“. Du kannst die Datei dann an einen beliebigen Ort speichern und z. B. für Support-Anfragen anhängen.
+
+- **Logdatei öffnen:**  
+  Mit „Logdatei öffnen“ wird die Logdatei direkt im Standard-Editor deines Systems angezeigt.
+
+Die Logdatei enthält alle wichtigen Informationen zur Fehlerdiagnose und hilft bei der schnellen Problemlösung. 

@@ -1,8 +1,8 @@
 import requests
 from picard import config, log
-from ai_identifier.cache import get_cache, save_cache
+from .cache import get_cache, save_cache
 from PyQt6 import QtWidgets
-from ai_identifier import is_debug_logging, _msg
+from .utils import is_debug_logging, _msg
 
 def call_ollama(prompt, model="mistral", tagger=None, file_name=None):
     url = str(config.setting["aiid_ollama_url"]) if "aiid_ollama_url" in config.setting else "http://localhost:11434"
